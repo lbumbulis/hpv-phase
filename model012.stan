@@ -1,16 +1,20 @@
 
 data {
   int <lower=0> N;        // number of subjects
+  vector<lower=0>[N] s01; // sojourn times in state 0 before 0->1
   vector<lower=0>[N] s12; // sojourn times in state 1 before 1->2
   
   int <lower=1> max_M;    // maximum value of M considered for approximating NB
 }
 
 parameters {
-  // Gamma rate parameter
+  // Exponential rate parameter for 0->1
+  real <lower=0> lambda1;
+  
+  // Gamma rate parameter for 1->2
   real <lower=0> lambda2;
   
-  // Negative Binomial log-mean and log-dispersion parameters
+  // Negative Binomial log-mean and log-dispersion parameters for no. of phases M
   real log_mu2;
   real log_phi2;
 }
@@ -22,11 +26,15 @@ transformed parameters {
 
 model {
   // Priors
+  lambda1  ~ gamma(1, 1);
   lambda2  ~ gamma(1, 1);
   log_mu2  ~ normal(0, sqrt(2));
   log_phi2 ~ normal(3, 0.5);
   
-  // Log-likelihood
+  // Log-likelihood for 0->1
+  s01 ~ exponential(lambda1);
+  
+  // Log-likelihood for 1->2
   vector[max_M] M_vals = linspaced_vector(max_M, 1, max_M);
   
   vector[max_M] log_M_probs;
@@ -47,7 +55,7 @@ model {
 }
 
 generated quantities {
-  real prior_lambda2  = gamma_rng(1, 1);
+  real prior_lambda  = gamma_rng(1, 1);
   real prior_log_mu2  = normal_rng(0, sqrt(2));
   real prior_log_phi2 = normal_rng(3, 0.5);
 }
