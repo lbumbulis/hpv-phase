@@ -47,7 +47,8 @@ model {
 }
 
 generated quantities {
-  real prior_log_lambda2 = log(gamma_rng(1, 1));
-  int  post_M            = neg_binomial_rng(phi2, phi2/mu2) + 1;
+  real prior_lambda2  = gamma_rng(1, 1);
+  real prior_log_mu2  = normal_rng(0, sqrt(2));
+  real prior_log_phi2 = normal_rng(3, 0.5);
 }
 

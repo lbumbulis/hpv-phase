@@ -10,7 +10,11 @@ stan_params12 <- data.frame(
 )
 
 # Generate sojourn time in state 1 before -> 2
-s12.fn <- function(N) {
-  M <- rnbinom(1, size=phi2, mu=mu2)
+s12.fn <- function(N, M_type) {
+  if (M_type=="common") {
+    M <- rnbinom(1, size=phi2, mu=mu2)+1
+  } else if (M_type=="individual") {
+    M <- rnbinom(N, size=phi2, mu=mu2)+1
+  }
   rgamma(N, shape=M, rate=lambda2)
 }

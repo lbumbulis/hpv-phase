@@ -11,7 +11,7 @@ sim.seeds <- readRDS("sim_seeds_nsim1000.rds")
 .Random.seed <- sim.seeds[[iter]]
 
 N <- 1000
-s12 <- s12.fn(N)
+s12 <- s12.fn(N, M_type="individual")
 
 stan_data <- list(
   N = N,
@@ -25,8 +25,8 @@ set_cmdstan_path("/home/lsbumbul/.cmdstan/cmdstan-2.38.0")
 init_fn <- function() {
   list(
     lambda2  = runif(1, min=0, max=3),
-    log_mu2  = runif(1, min=0, max=4),
-    log_phi2 = runif(1, min=1, max=4)
+    log_mu2  = runif(1, min=0, max=4), # could tighten to (0.5, 2.5)
+    log_phi2 = runif(1, min=1, max=4)  # could tighten to (2, 3.5)
   )
 }
 
