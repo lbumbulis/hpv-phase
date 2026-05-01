@@ -109,13 +109,13 @@ plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="
   
   df <- test.params
   df <- cbind(df, t(sapply(1:nrow(df), function(r) {
-    dM <- dnbinom(M.vals-1, size=df$size[r], mu=df$mu[r])
+    M.pmf <- dnbinom(M.vals-1, size=df$size[r], mu=df$mu[r])
     
     x <- df$x[r]
     dens <- dgamma(x, shape=M.vals, rate=lambda2)
     surv <- pgamma(x, shape=M.vals, rate=lambda2, lower.tail=F)
     
-    t(dM) %*% cbind(dens, surv, dens/surv)
+    t(M.pmf) %*% cbind(dens, surv, dens/surv)
   })))
   names(df)[4:6] <- c("density", "survival", "hazard")
   df <- df |>
@@ -162,7 +162,7 @@ plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="
 
 # Try to emulate 1->0 density
 size.vals <- c(1, 5, 50)
-mu.vals <- c(0.1, 1, 2)
+mu.vals <- c(0.1, 0.54, 1)
 plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "d10")
 plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "hazard")
 plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "survival")
@@ -170,9 +170,60 @@ plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "survival")
 # Try to emulate 1->2 density
 size.vals <- c(1, 5, 20, 50)
 mu.vals <- c(1, 2, 8)
-plot.sojourn.M(lambda2=1.5, size.vals, mu.vals, max.x=10, "d12")
-plot.sojourn.M(lambda2=1.5, size.vals, mu.vals, max.x=10, "none", "hazard")
-plot.sojourn.M(lambda2=1.5, size.vals, mu.vals, max.x=10, "none", "survival")
+plot.sojourn.M(lambda2=1.6, size.vals, mu.vals, max.x=10, "d12")
+plot.sojourn.M(lambda2=1.6, size.vals, mu.vals, max.x=10, "none", "hazard")
+plot.sojourn.M(lambda2=1.6, size.vals, mu.vals, max.x=10, "none", "survival")
 
+
+
+###### Expected sojourn time as a function of mu and phi ######################
+M.vals <- 1:100
+
+ES.fn <- function(lambda, phi, mu, squared=F) {
+  M.pmf <- dnbinom(M.vals-1, size=phi, mu=mu)
+  
+  if (squared) {
+    integrand <- Vectorize(function(x) {
+      M.pmf %*% dgamma(x, shape=M.vals, rate=lambda) * x^2
+    })
+  } else {
+    integrand <- Vectorize(function(x) {
+      M.pmf %*% dgamma(x, shape=M.vals, rate=lambda) * x
+      # M.pmf %*% pgamma(x, shape=M.vals, rate=lambda, lower.tail=F) # same
+    })
+  }
+  integrate(integrand, 0, Inf)$value
+}
+
+VarS.fn <- function(lambda, phi, mu) {
+  ES.fn(lambda, phi, mu, squared=T) - ES.fn(lambda, phi, mu, squared=F)^2
+}
+
+# Try to emulate 1->0 mean sojourn time
+ES.fn(lambda=1.7, phi=5, mu=0.1)  # 0.647
+ES.fn(lambda=1.7, phi=5, mu=0.5)  # 0.882
+ES.fn(lambda=1.7, phi=5, mu=0.54) # 0.906
+ES.fn(lambda=1.7, phi=1, mu=0.54) # 0.906
+1/rho0 * gamma(1 + 1/kappa0)      # 0.903
+
+# Try to emulate 1->2 mean sojourn time
+ES.fn(lambda=1.5, phi=20, mu=8) # 6.000
+ES.fn(lambda=1.6, phi=20, mu=8) # 5.625
+1/rho2 * gamma(1 + 1/kappa2)    # 5.542
+
+# Note: For fixed lambda and mu, phi does not affect the mean
+
+# Try to emulate 1->0 variance of sojourn time
+VarS.fn(lambda=1.7, phi=5, mu=0.1)                       # 0.416
+VarS.fn(lambda=1.7, phi=5, mu=0.5)                       # 0.709
+VarS.fn(lambda=1.7, phi=5, mu=0.54)                      # 0.740
+VarS.fn(lambda=1.7, phi=1, mu=0.54)                      # 0.821
+1/(rho0^2) * ( gamma(1+2/kappa0) - gamma(1+1/kappa0)^2 ) # 1.538
+
+# Try to emulate 1->2 variance of sojourn time
+VarS.fn(lambda=1.5, phi=20, mu=8)                        # 8.978
+VarS.fn(lambda=1.6, phi=20, mu=8)                        # 7.891
+VarS.fn(lambda=1.6, phi=50, mu=8)                        # 7.141; hard to estimate phi
+1/(rho2^2) * ( gamma(1+2/kappa2) - gamma(1+1/kappa2)^2 ) # 5.917
 
 

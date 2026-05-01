@@ -18,12 +18,12 @@ data {
 }
 
 parameters {
-  // Exponential rate parameter for 0->1
-  real <lower=0> lambda1;
-  // Gamma rate parameter for 1->0
-  real <lower=0> lambda0;
-  // Gamma rate parameter for 1->2
-  real <lower=0> lambda2;
+  // Exponential log-rate parameter for 0->1
+  real log_lambda1;
+  // Gamma log-rate parameter for 1->0
+  real log_lambda0;
+  // Gamma log-rate parameter for 1->2
+  real log_lambda2;
   
   // Negative Binomial log-mean and log-dispersion parameters for no. of phases M
   // 1->0
@@ -35,6 +35,10 @@ parameters {
 }
 
 transformed parameters {
+  real lambda0 = exp(log_lambda0);
+  real lambda1 = exp(log_lambda1);
+  real lambda2 = exp(log_lambda2);
+  
   real mu0  = exp(log_mu0);
   real phi0 = exp(log_phi0);
   
@@ -44,15 +48,15 @@ transformed parameters {
 
 model {
   // Priors
-  lambda0  ~ gamma(1, 1);
-  log_mu0  ~ normal(-2, 1);
-  log_phi0 ~ normal(1.5, 0.75);
+  log_lambda0 ~ normal(0, 1);
+  log_mu0     ~ normal(-2, 1);
+  log_phi0    ~ normal(1.5, 0.75);
   
-  lambda1  ~ gamma(1, 1);
+  log_lambda1 ~ normal(0, 1);
   
-  lambda2  ~ gamma(1, 1);
-  log_mu2  ~ normal(0, sqrt(2));
-  log_phi2 ~ normal(3, 0.5);
+  log_lambda2 ~ normal(0, 1);
+  log_mu2     ~ normal(0, sqrt(2));
+  log_phi2    ~ normal(3, 0.5);
   
   // Log-likelihood for 0->1
   s01 ~ exponential(lambda1);
@@ -125,7 +129,7 @@ model {
 }
 
 generated quantities {
-  real prior_lambda  = gamma_rng(1, 1);
+  real prior_log_lambda = normal_rng(0, 1);
   
   real prior_log_mu0  = normal_rng(-2, 1);
   real prior_log_phi0 = normal_rng(1.5, 0.75);

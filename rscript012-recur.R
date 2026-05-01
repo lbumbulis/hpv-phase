@@ -42,19 +42,20 @@ set_cmdstan_path("/home/lsbumbul/.cmdstan/cmdstan-2.38.0")
 
 init_fn <- function() {
   list(
-    lambda0  = runif(1, min=0.5, max=3),
-    log_mu0  = runif(1, min=-4,  max=2),
-    log_phi0 = runif(1, min=1,   max=3),
+    log_lambda0 = runif(1, min=0,  max=1.5),
+    log_mu0     = runif(1, min=-4, max=2),
+    log_phi0    = runif(1, min=-1, max=2),
     
-    lambda1  = runif(1, min=0,   max=2),
+    log_lambda1 = runif(1, min=-3, max=0),
     
-    lambda2  = runif(1, min=0.5, max=3),
-    log_mu2  = runif(1, min=0,   max=4), # could tighten to (0.5, 2.5)
-    log_phi2 = runif(1, min=1,   max=4)  # could tighten to (2, 3.5)
+    log_lambda2 = runif(1, min=0,  max=1.5),
+    log_mu2     = runif(1, min=0,  max=4), # could tighten to (0.5, 2.5)
+    log_phi2    = runif(1, min=1,  max=4)  # could tighten to (2, 3.5)
   )
 }
 
 stan_model <- cmdstan_model("model012-recur.stan")
+
 model_fit <- stan_model$sample(
   stan_data,
   init = init_fn,
@@ -63,6 +64,5 @@ model_fit <- stan_model$sample(
   parallel_chains = 4,
   refresh = 5
 )
-
 model_fit$save_object(file=paste0("./results/model012-recur_iter", iter, ".rds"))
 
