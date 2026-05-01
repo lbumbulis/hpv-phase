@@ -162,7 +162,7 @@ plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="
 
 # Try to emulate 1->0 density
 size.vals <- c(1, 5, 50)
-mu.vals <- c(0, 1, 2)
+mu.vals <- c(0.1, 1, 2)
 plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "d10")
 plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "hazard")
 plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "survival")
