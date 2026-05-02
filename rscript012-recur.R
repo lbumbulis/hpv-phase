@@ -34,7 +34,9 @@ stan_data <- list(
   s00 = dat$s[idx00],
   s11 = dat$s[idx11],
   
-  max_M = 100
+  max_M = 50,
+  
+  grainsize = 1
 )
 
 # set_cmdstan_path("C:/Users/lbumb/.cmdstan/cmdstan-2.38.0")
@@ -42,26 +44,27 @@ set_cmdstan_path("/home/lsbumbul/.cmdstan/cmdstan-2.38.0")
 
 init_fn <- function() {
   list(
-    log_lambda0 = runif(1, min=0,  max=1.5),
-    log_mu0     = runif(1, min=-4, max=2),
-    log_phi0    = runif(1, min=-1, max=2),
+    log_lambda1  = runif(1, min=-3, max=0),
     
-    log_lambda1 = runif(1, min=-3, max=0),
+    log_mean_s10 = runif(1, min=-4, max=-1),
+    log_mu0      = runif(1, min=-4, max=2),
+    log_phi0     = runif(1, min=-1, max=2),
     
-    log_lambda2 = runif(1, min=0,  max=1.5),
-    log_mu2     = runif(1, min=0,  max=4), # could tighten to (0.5, 2.5)
-    log_phi2    = runif(1, min=1,  max=4)  # could tighten to (2, 3.5)
+    log_mean_s12 = runif(1, min=1,  max=3),
+    log_mu2      = runif(1, min=0,  max=4),
+    log_phi2     = runif(1, min=1,  max=3.3)
   )
 }
 
-stan_model <- cmdstan_model("model012-recur.stan")
+stan_model <- cmdstan_model("model012-recur.stan", cpp_options=list(stan_threads=T))
 
 model_fit <- stan_model$sample(
   stan_data,
   init = init_fn,
-  iter_sampling = 1500,
+  iter_sampling = 1000,
   iter_warmup = 500,
   parallel_chains = 4,
+  threads_per_chain = 4,
   refresh = 5
 )
 model_fit$save_object(file=paste0("./results/model012-recur_iter", iter, ".rds"))

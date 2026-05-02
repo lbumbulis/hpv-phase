@@ -20,6 +20,11 @@ stan_params012 <- rbind(
   data.frame(param="lambda1", value=lambda1), stan_params12
 )
 
+stan_params012_recur <- data.frame(
+  param = paste0("log_", c("lambda1", "mean_s10", "mean_s12", "mu0", "phi0", "mu2", "phi2")),
+  value = log(c(lambda1, mu0/lambda0, mu2/lambda2, mu0, phi0, mu2, phi2))
+)
+
 tau <- 90 # administrative censoring age
 
 # Generate sojourn time in state 0 before -> 1

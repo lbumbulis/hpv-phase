@@ -1,4 +1,54 @@
 
+functions { // for reduce_sum
+  real partial_sum_10(array[] real s10_slice, int start, int end,
+                      int max_M, vector log_M0_probs, vector log_M2_probs,
+                      real lambda0, real lambda2) {
+    real lp = 0;
+    for (ii in 1:(end - start + 1)) {
+      vector[max_M] logf0_row;
+      vector[max_M] logsurv2_row;
+      for (M in 1:max_M) {
+        logf0_row[M]    = gamma_lpdf(s10_slice[ii]          | M, lambda0) + log_M0_probs[M];
+        logsurv2_row[M] = gamma_lccdf(s10_slice[ii]*lambda2 | M, 1)       + log_M2_probs[M];
+      }
+      lp += log_sum_exp(logf0_row) + log_sum_exp(logsurv2_row);
+    }
+    return lp;
+  }
+
+  real partial_sum_12(array[] real s12_slice, int start, int end,
+                      int max_M, vector log_M0_probs, vector log_M2_probs,
+                      real lambda0, real lambda2) {
+    real lp = 0;
+    for (ii in 1:(end - start + 1)) {
+      vector[max_M] logf2_row;
+      vector[max_M] logsurv0_row;
+      for (M in 1:max_M) {
+        logf2_row[M]    = gamma_lpdf(s12_slice[ii]          | M, lambda2) + log_M2_probs[M];
+        logsurv0_row[M] = gamma_lccdf(s12_slice[ii]*lambda0 | M, 1)       + log_M0_probs[M];
+      }
+      lp += log_sum_exp(logf2_row) + log_sum_exp(logsurv0_row);
+    }
+    return lp;
+  }
+
+  real partial_sum_11(array[] real s11_slice, int start, int end,
+                      int max_M, vector log_M0_probs, vector log_M2_probs,
+                      real lambda0, real lambda2) {
+    real lp = 0;
+    for (ii in 1:(end - start + 1)) {
+      vector[max_M] logsurv2_row;
+      vector[max_M] logsurv0_row;
+      for (M in 1:max_M) {
+        logsurv2_row[M] = gamma_lccdf(s11_slice[ii]*lambda2 | M, 1) + log_M2_probs[M];
+        logsurv0_row[M] = gamma_lccdf(s11_slice[ii]*lambda0 | M, 1) + log_M0_probs[M];
+      }
+      lp += log_sum_exp(logsurv2_row) + log_sum_exp(logsurv0_row);
+    }
+    return lp;
+  }
+}
+
 data {
   // Total number of person-time points ...
   int <lower=0> n01; // ... with 0 -> 1 transition
@@ -8,22 +58,25 @@ data {
   int <lower=0> n11; // ... stay in state 1
   
   // Sojourn times ...
-  vector<lower=0>[n01] s01; // ... in state 0 before 0 -> 1 transition
-  vector<lower=0>[n10] s10; // ... in state 1 before 1 -> 0 transition
-  vector<lower=0>[n12] s12; // ... in state 1 before 1 -> 2 transition
-  vector<lower=0>[n00] s00; // ... stayed in state 0 until end of study
-  vector<lower=0>[n11] s11; // ... stayed in state 1 until end of study
+  vector<lower=0>[n01] s01;     // ... in state 0 before 0 -> 1 transition
+  vector<lower=0>[n00] s00;     // ... stayed in state 0 until end of study
+  array[n10] real<lower=0> s10; // ... in state 1 before 1 -> 0 transition
+  array[n12] real<lower=0> s12; // ... in state 1 before 1 -> 2 transition
+  array[n11] real<lower=0> s11; // ... stayed in state 1 until end of study
   
   int <lower=1> max_M;    // maximum value of M considered for approximating NB
+  
+  int <lower=1> grainsize; // for reduce_sum
 }
 
 parameters {
   // Exponential log-rate parameter for 0->1
   real log_lambda1;
-  // Gamma log-rate parameter for 1->0
-  real log_lambda0;
-  // Gamma log-rate parameter for 1->2
-  real log_lambda2;
+  
+  // Log-mean sojourn time for 1->0 when M0=mu0, i.e. log(mu0/lambda0)
+  real log_mean_s10;
+  // Log-mean sojourn time for 1->2 when M2=mu2, i.e. log(mu2/lambda2)
+  real log_mean_s12;
   
   // Negative Binomial log-mean and log-dispersion parameters for no. of phases M
   // 1->0
@@ -35,9 +88,10 @@ parameters {
 }
 
 transformed parameters {
-  real lambda0 = exp(log_lambda0);
   real lambda1 = exp(log_lambda1);
-  real lambda2 = exp(log_lambda2);
+  
+  real lambda0 = exp(log_mu0 - log_mean_s10);
+  real lambda2 = exp(log_mu2 - log_mean_s12);
   
   real mu0  = exp(log_mu0);
   real phi0 = exp(log_phi0);
@@ -48,15 +102,15 @@ transformed parameters {
 
 model {
   // Priors
-  log_lambda0 ~ normal(0, 1);
-  log_mu0     ~ normal(-2, 1);
-  log_phi0    ~ normal(1.5, 0.75);
-  
   log_lambda1 ~ normal(0, 1);
   
-  log_lambda2 ~ normal(0, 1);
-  log_mu2     ~ normal(0, sqrt(2));
-  log_phi2    ~ normal(3, 0.5);
+  log_mean_s10 ~ normal(-1, 1);
+  log_mu0      ~ normal(-0.5, 1);
+  log_phi0     ~ normal(0, 0.75);
+  
+  log_mean_s12 ~ normal(1, 0.5);
+  log_mu2      ~ normal(0, sqrt(2));
+  log_phi2     ~ normal(3, 0.5);
   
   // Log-likelihood for 0->1
   s01 ~ exponential(lambda1);
@@ -71,70 +125,26 @@ model {
     log_M0_probs[M] = neg_binomial_lpmf(M-1 | phi0, phi0/mu0);
     log_M2_probs[M] = neg_binomial_lpmf(M-1 | phi2, phi2/mu2);
   }
-  
-  // Density contributions (vectorized)
-  vector[max_M] M_vals = linspaced_vector(max_M, 1, max_M);
-  matrix[n10, max_M] logf0_C; // conditional on M
-  matrix[n12, max_M] logf2_C;
-  
-  logf0_C = log(s10) * (M_vals-1)'           // outer product for terms depending on s10 and M
-              + rep_matrix(-s10*lambda0, max_M)                // terms depending on s10 only
-              + rep_matrix(                                    // terms depending on M only
-                  (M_vals*log(lambda0) - lgamma(M_vals))', n10
-                );
-  logf2_C = log(s12) * (M_vals-1)'
-              + rep_matrix(-s12*lambda2, max_M)
-              + rep_matrix((M_vals*log(lambda2) - lgamma(M_vals))', n12);
-  
-  matrix[n10, max_M] logf0_M = logf0_C + rep_matrix(log_M0_probs', n10); // marginalize over M
-  matrix[n12, max_M] logf2_M = logf2_C + rep_matrix(log_M2_probs', n12);
-  
-  // Survival function contributions (requires loop)
-  // 1->0 transitions
-  matrix[n10, max_M] logsurv2_10;
-  // 1->2 transitions
-  matrix[n12, max_M] logsurv0_12;
-  // Admin censored in state 1
-  matrix[n11, max_M] logsurv2_11;
-  matrix[n11, max_M] logsurv0_11;
-  
-  // Pre-compute some values so the calculations can be vectorized
-  vector[n10] s10_scaled  = s10 * lambda2;
-  vector[n12] s12_scaled  = s12 * lambda0;
-  vector[n11] s11_scaled2 = s11 * lambda2;
-  vector[n11] s11_scaled0 = s11 * lambda0;
-  
-  for (M in 1:max_M) {
-    for (ii in 1:n10) {
-      logsurv2_10[ii, M] = gamma_lccdf(s10_scaled[ii] | M, 1) + log_M2_probs[M];
-    }
-    for (ii in 1:n12) {
-      logsurv0_12[ii, M] = gamma_lccdf(s12_scaled[ii] | M, 1) + log_M0_probs[M];
-    }
-    for (ii in 1:n11) {
-      logsurv2_11[ii, M] = gamma_lccdf(s11_scaled2[ii] | M, 1) + log_M2_probs[M];
-      logsurv0_11[ii, M] = gamma_lccdf(s11_scaled0[ii] | M, 1) + log_M0_probs[M];
-    }
-  }
-  
-  for (ii in 1:n10) {
-    target += log_sum_exp(logf0_M[ii]) + log_sum_exp(logsurv2_10[ii]);
-  }
-  for (ii in 1:n12) {
-    target += log_sum_exp(logf2_M[ii]) + log_sum_exp(logsurv0_12[ii]);
-  }
-  for (ii in 1:n11) {
-    target += log_sum_exp(logsurv2_11[ii]) + log_sum_exp(logsurv0_11[ii]);
-  }
+  // 1->0
+  target += reduce_sum(partial_sum_10, s10, grainsize,
+                       max_M, log_M0_probs, log_M2_probs, lambda0, lambda2);
+  // 1->2
+  target += reduce_sum(partial_sum_12, s12, grainsize,
+                       max_M, log_M0_probs, log_M2_probs, lambda0, lambda2);
+  // 1->1
+  target += reduce_sum(partial_sum_11, s11, grainsize,
+                       max_M, log_M0_probs, log_M2_probs, lambda0, lambda2);
 }
 
 generated quantities {
-  real prior_log_lambda = normal_rng(0, 1);
-  
-  real prior_log_mu0  = normal_rng(-2, 1);
-  real prior_log_phi0 = normal_rng(1.5, 0.75);
-  
-  real prior_log_mu2  = normal_rng(0, sqrt(2));
-  real prior_log_phi2 = normal_rng(3, 0.5);
+  real prior_log_lambda1  = normal_rng(0, 1);
+
+  real prior_log_mean_s10 = normal_rng(-1, 1);
+  real prior_log_mu0      = normal_rng(-0.5, 1);
+  real prior_log_phi0     = normal_rng(0, 0.75);
+
+  real prior_log_mean_s12 = normal_rng(1, 0.5);
+  real prior_log_mu2      = normal_rng(0, sqrt(2));
+  real prior_log_phi2     = normal_rng(3, 0.5);
 }
 
