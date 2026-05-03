@@ -11,15 +11,17 @@ sim.seeds <- readRDS("sim_seeds_nsim1000.rds")
 .Random.seed <- sim.seeds[[iter]]
 
 N <- 1000
+visit.freq <- 3
+
 M2 <- rnbinom(N, size=phi2, mu=mu2) + 1
 
 s01 <- s01.fn(N)
 s12 <- s12.fn(N, M=M2)
 
 dat <- dfify(s01, s12)
-pdat <- panelize(dat, visit.freq=3, tau=200)
+pdat <- panelize(dat, visit.freq, tau=200)
 
-stan_data <- c(process.panel.012(pdat), list(max_M=25))
+stan_data <- c(process.panel.012(pdat, visit.freq), list(max_M=25))
 
 init_fn <- function() {
   list(

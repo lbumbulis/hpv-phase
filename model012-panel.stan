@@ -42,6 +42,7 @@ functions {
       } else {          // -> 1
         prob_tt = sum(alpha[2:(n_states-1)]);
       }
+      if (prob_tt <= 0) return negative_infinity();
       log_prob += log(prob_tt);
       
       // Zero out probabilities for (possibly latent) states that are
@@ -96,10 +97,10 @@ transformed parameters {
 
 model {
   // Priors
-  log_lambda1  ~ normal(0, 1); // intentionally vague
-  log_mean_s12 ~ normal(1.14, 0.5); // log(mu2/lambda2)
-  log_mu2      ~ normal(1.61, 0.5);
-  log_phi2     ~ normal(3, 0.5);
+  log_lambda1  ~ normal(0, 1);   // intentionally vague
+  log_mean_s12 ~ normal(1, 1);   // prior1: n(1.14, 0.5)     log(mu2/lambda2)
+  log_mu2      ~ normal(1, 1);   // prior1: n(1.61, 0.5)
+  log_phi2     ~ normal(3, 0.5); // same as prior1
   
   // Log-likelihood
   // (0, ..., 0) sequences

@@ -9,7 +9,7 @@ model_fit$summary()
 ##### Process results from many replicates ####################################
 library(dplyr)
 library(tidyr)
-model_type <- "012-recur"
+model_type <- "012-panel"
 
 results_files <- list.files(paste0("./results/"), full.names=T)
 target_files <- results_files[grep(paste0("model", model_type, "_"), results_files, fixed=T)]
@@ -55,7 +55,10 @@ plot_est <- function(est_se, truth) {
   
   if (nparam==3) {
     old.par <- par(mfrow=c(1,3), mar=c(2,4,2,1))
-    layout(matrix(c(1,2,3,rep(4,3)), nrow=2, byrow=T), heights=c(1, 0.1))
+    layout(matrix(c(1:3, rep(4,3)), nrow=2, byrow=T), heights=c(1, 0.1))
+  } else if (nparam==4) {
+    old.par <- par(mfrow=c(2,2), mar=c(2,4,2,1))
+    layout(matrix(c(1:4, rep(5,4)), nrow=2, byrow=T), heights=c(1, 0.1))
   } else if (nparam==7) {
     old.par <- par(mfrow=c(2,4), mar=c(2,4,2,1))
     layout(matrix(c(1:7, rep(8,7)), nrow=2, byrow=T), heights=c(1, 0.1))
@@ -77,8 +80,8 @@ plot_est <- function(est_se, truth) {
   par(old.par)
 }
 
-model_type <- "012-recur"
-truth <- stan_params012_recur
+model_type <- "012-panel"
+truth <- stan_params012
 
 all_summary <- readRDS(paste0("./results/model", model_type, "_summary.rds"))
 
@@ -93,7 +96,11 @@ plot_draws <- function(df, iters=NULL) {
     df <- df[,-which(names(df)=="iter")]
   }
   
-  old.par <- par(mfrow=c(2,4))
+  nparam <- nrow(truth)
+  if (nparam==4) {
+    old.par <- par(mfrow=c(1,4))
+  }
+  
   for (j in 1:nrow(truth)) {
     temp <- as.numeric(df[[j]][iters])
     hist(temp, main=truth$param[j], xlab="")

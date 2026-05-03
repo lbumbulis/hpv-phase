@@ -12,13 +12,9 @@ lambda2 <- 1.6
 mu2 <- 5   # ideally 8, but reduced for computation reasons
 phi2 <- 20
 
-stan_params12 <- data.frame(
-  param = c("lambda2", "log_mu2", "log_phi2"),
-  value = c(lambda2, log(mu2), log(phi2))
-)
-
-stan_params012 <- rbind(
-  data.frame(param="lambda1", value=lambda1), stan_params12
+stan_params012 <- data.frame(
+  param = paste0("log_", c("lambda1", "mean_s12", "mu2", "phi2")),
+  value = log(c(lambda1, mu2/lambda2, mu2, phi2))
 )
 
 stan_params012_recur <- data.frame(
@@ -198,16 +194,14 @@ panelize <- function(NH, visit.freq, tau) {
 
 # Prep data for Stan under a progressive 0->1->2 process; assumes equal
 # times between visits, and assumes state 2 is observed for all subjects
-process.panel.012 <- function(pdat) {
+process.panel.012 <- function(pdat, visit.freq) {
   # Aggregate lengths of total observed sojourns in state 0
   nvisits <- pdat %>%
     group_by(id, to_z) %>%
     summarize(n=n(), .groups="drop") %>%
     complete(id, to_z=0:2, fill=list(n=0))
   
-  dt <- pdat$t[2] - pdat$t[1]
-  
-  s0   <- nvisits$n[which(nvisits$to_z==0)] * dt
+  s0   <- nvisits$n[which(nvisits$to_z==0)] * visit.freq
   idx0 <- which(s0 > 0)
   # Subjects with n1=0 but n2>0: observed jumping from state 0 to state 2
   n02 <- sum(nvisits$n[which(nvisits$to_z==1)] == 0 & 
@@ -218,7 +212,7 @@ process.panel.012 <- function(pdat) {
   n1.df <- n1.df[which(n1.df$Var1 != 0),]
   
   return(list(
-    dt = dt,
+    dt = visit.freq,
     N  = nrow(nvisits) / 3,
     
     N0  = length(idx0),
