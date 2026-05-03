@@ -85,3 +85,25 @@ all_summary <- readRDS(paste0("./results/model", model_type, "_summary.rds"))
 coverage(all_summary, truth)
 plot_est(all_summary, truth)
 
+plot_draws <- function(df, iters=NULL) {
+  if (is.null(iters)) {
+    iters <- 1:nrow(df)
+  }
+  if ("iter" %in% names(df)) {
+    df <- df[,-which(names(df)=="iter")]
+  }
+  
+  old.par <- par(mfrow=c(2,4))
+  for (j in 1:nrow(truth)) {
+    temp <- as.numeric(df[[j]][iters])
+    hist(temp, main=truth$param[j], xlab="")
+    abline(v=mean(temp), lwd=2, lty=2)
+    abline(v=truth$value[j], col="red", lwd=2, lty=2)
+  }
+  par(old.par)
+}
+
+all_draws <- readRDS(paste0("./results/model", model_type, "_draws.rds"))
+
+plot_draws(all_draws)
+

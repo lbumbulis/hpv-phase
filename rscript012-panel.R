@@ -11,29 +11,31 @@ sim.seeds <- readRDS("sim_seeds_nsim1000.rds")
 .Random.seed <- sim.seeds[[iter]]
 
 N <- 1000
-s01 <- s01.fn(N)
-s12 <- s12.fn(N, M_type="individual")
+M2 <- rnbinom(N, size=phi2, mu=mu2) + 1
 
-stan_data <- list(
-  N = N,
-  s01 = s01,
-  s12 = s12,
-  max_M = 100
-)
+s01 <- s01.fn(N)
+s12 <- s12.fn(N, M=M2)
+
+dat <- dfify(s01, s12)
+pdat <- panelize(dat, visit.freq=3, tau=200)
+
+stan_data <- c(process.panel.012(pdat), list(max_M=25))
+
+init_fn <- function() {
+  list(
+    log_lambda1  = runif(1, min=-3,  max=0),
+    log_mean_s12 = runif(1, min=0,   max=2),
+    log_mu2      = runif(1, min=0.5, max=2),
+    log_phi2     = runif(1, min=2,   max=3.3)
+  )
+}
 
 # set_cmdstan_path("C:/Users/lbumb/.cmdstan/cmdstan-2.38.0")
 set_cmdstan_path("/home/lsbumbul/.cmdstan/cmdstan-2.38.0")
 
-init_fn <- function() {
-  list(
-    lambda1  = runif(1, min=0, max=2),
-    lambda2  = runif(1, min=0, max=3),
-    log_mu2  = runif(1, min=0, max=4), # could tighten to (0.5, 2.5)
-    log_phi2 = runif(1, min=1, max=4)  # could tighten to (2, 3.5)
-  )
-}
 
-stan_model <- cmdstan_model("model012.stan")
+
+stan_model <- cmdstan_model("model012-panel.stan")
 model_fit <- stan_model$sample(
   stan_data,
   init = init_fn,
@@ -43,5 +45,5 @@ model_fit <- stan_model$sample(
   refresh = 10
 )
 
-model_fit$save_object(file=paste0("./results/model012_iter", iter, ".rds"))
+model_fit$save_object(file=paste0("./results/model012-panel_iter", iter, ".rds"))
 
