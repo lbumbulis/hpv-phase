@@ -69,3 +69,26 @@ model_fit <- stan_model$sample(
 )
 model_fit$save_object(file=paste0("./results/model012-recur_iter", iter, ".rds"))
 
+# test_fit <- stan_model$sample(
+#   stan_data,
+#   init = init_fn,
+#   iter_sampling = 1000,
+#   iter_warmup = 500,
+#   chains = 2,
+#   parallel_chains = 2,
+#   refresh = 1,
+#   save_warmup = T
+# )
+# # For (lambda, mu) param, this takes ~ 50min without "dense_e"; with "dense_e" it seems even slower.
+# 
+# test_fit$draws() |> posterior::as_draws_df() |>
+#   select(starts_with("log_")) |>
+#   pairs()
+# test_fit$draws() |> posterior::as_draws_df() |>
+#   select(starts_with("log_")) |>
+#   cor()
+# # log_lambda0 is highly (positively) correlated with log_mu0 (~0.96),
+# # and likewise for log_lambda2 and log_mu2.
+# # - More phases => need to move through the phases at a faster rate.
+
+
