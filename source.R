@@ -209,16 +209,21 @@ process.panel.012 <- function(pdat) {
   
   s0   <- nvisits$n[which(nvisits$to_z==0)] * dt
   idx0 <- which(s0 > 0)
+  # Subjects with n1=0 but n2>0: observed jumping from state 0 to state 2
+  n02 <- sum(nvisits$n[which(nvisits$to_z==1)] == 0 & 
+               nvisits$n[which(nvisits$to_z==2)] > 0)
   
   n1.df <- as.data.frame(table(nvisits$n[which(nvisits$to_z==1)]))
+  n1.df$Var1 <- as.integer(as.character(n1.df$Var1)) # convert from factor
   n1.df <- n1.df[which(n1.df$Var1 != 0),]
   
   return(list(
     dt = dt,
     N  = nrow(nvisits) / 3,
     
-    N0 = length(idx0),
-    s0 = s0[idx0],
+    N0  = length(idx0),
+    s0  = s0[idx0],
+    n02 = n02,
     
     nn1       = nrow(n1.df),
     n1_unique = n1.df$Var1,

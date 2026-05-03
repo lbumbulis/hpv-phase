@@ -65,8 +65,9 @@ data {
   
   int<lower=1> N;  // number of subjects
   
-  int<lower=0> N0; // number of subjects with at least one visit interval ending in state 0
+  int<lower=0> N0;  // number of subjects with at least one visit interval ending in state 0
   array[N0] real<lower=0> s0; // total observed sojourn time in state 0, per subject
+  int<lower=0> n02; // number of subjects observed in states 0 and 2 at consecutive visits
   
   int<lower=1> nn1;  // number of unique numbers of visit intervals ending in state 1
   array[nn1] int<lower=1> n1_unique; // array of unique numbers of visit intervals ending in state 1
@@ -95,14 +96,16 @@ transformed parameters {
 
 model {
   // Priors
-  log_lambda1 ~ normal(0, 1); // intentionally vague
-  log_mean_s12 ~ normal(-1.39, 0.5); // log(mu2/phi2)
+  log_lambda1  ~ normal(0, 1); // intentionally vague
+  log_mean_s12 ~ normal(1.14, 0.5); // log(mu2/lambda2)
   log_mu2      ~ normal(1.61, 0.5);
   log_phi2     ~ normal(3, 0.5);
   
   // Log-likelihood
+  // (0, ..., 0) sequences
   target += exponential_lccdf(s0 | lambda1);
   
+  // (0, 1, ..., 1, 2) sequences and (0, 2) intervals
   vector[max_M] log_M_probs;
   for (M in 1:max_M) {
     log_M_probs[M] = neg_binomial_lpmf(M-1 | phi2, phi2/mu2);
@@ -110,21 +113,28 @@ model {
   
   int n_states;
   
-  matrix[nn1, max_M] loglik_C; // conditional on M
+  vector[max_M] loglik_m_02;       // marginal log-likelihood for (0,2) intervals
+  matrix[nn1, max_M] loglik_c_012; // conditional (on M) log-likelihood for (0,1,...,2) sequences
+  
   for (M in 1:max_M) {
     n_states = M+2;
     matrix[n_states, n_states] Q = Q_fn_012(M, lambda1, lambda2);
     matrix[n_states, n_states] P = matrix_exp(Q * dt);
     
+    loglik_m_02[M] = log(P[1, n_states]);
+    
     for (ii in 1:nn1) {
-      loglik_C[ii, M] = seq_log_prob(P, n1_unique[ii]);
+      loglik_c_012[ii, M] = seq_log_prob(P, n1_unique[ii]);
     }
   }
   
-  matrix[nn1, max_M] loglik_M = loglik_C + rep_matrix(log_M_probs', nn1); // marginalize over M
+  target += n02 * log_sum_exp(loglik_m_02 + log_M_probs);
+  
+  // Marginalize conditional terms over M
+  matrix[nn1, max_M] loglik_m_012 = loglik_c_012 + rep_matrix(log_M_probs', nn1);
   
   for (ii in 1:nn1) {
-    target += n1_count[ii] * log_sum_exp(loglik_M[ii]);
+    target += n1_count[ii] * log_sum_exp(loglik_m_012[ii]);
   }
 }
 
