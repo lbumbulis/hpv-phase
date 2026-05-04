@@ -36,56 +36,41 @@ functions {
     return Q;
   }
   
-  // CURRENTLY UNUSED: Probability of from->to transition with sojourn time s.
-  real transition_log_prob(matrix Q, real s, int from, int to) {
-    int n_states = rows(Q);
-    int n1       = n_states - 2;  // number of phase grid states
-  
-    matrix[n_states, n_states] P = matrix_exp(Q*s);
-  
-    int from_idx = (from==0) ? 1 : 2;     // from=1 starts at the first phase
-  
-    if (to==1) {
-      return log(sum(P[from_idx, 2:(n1+1)]));  // sum over all phase grid columns
-    } else {
-      int to_idx = (to==0) ? 1 : n_states;
-      return log(P[from_idx, to_idx]);
-    }
-  }
-  
-  // Log-probability of a sequence of states preceded by state 0, where the
-  // transition probability matrices governing the transitions between consecutive
-  // states are given by P_unique.
-  real seq_log_prob(array[] int states, array[] int delta_idx, array[] matrix P_unique) {
-    int n_obs    = size(states);  // excludes the known initial state 0
-    int n_states = rows(P_unique[1]);
+  // Log-probability of a sequence of states preceded by state 0, containing
+  // n1 1's, and ending in final_state, where the transition probability matrix
+  // governing the transitions between consecutive states is given by P.
+  real seq_log_prob(matrix P, int n1, int final_state) {
+    int n_states = rows(P);
     
     // Calculate using a forward algorithm
     row_vector[n_states] alpha = rep_row_vector(0.0, n_states);
     alpha[1] = 1.0;  // sequences always start in state 0
   
     real log_prob = 0.0;
+    
+    int tau = (final_state==1) ? n1 : n1+1; // n1 includes the final state if applicable
   
-    for (tt in 1:n_obs) {
-      alpha = alpha * P_unique[delta_idx[tt]];
+    for (tt in 1:tau) {
+      alpha = alpha * P;
   
       real prob_tt;
-      if (states[tt] == 0) {
-        prob_tt = alpha[1];
-      } else if (states[tt] == 1) {
+      if (tt <= n1) {
         prob_tt = sum(alpha[2:(n_states-1)]);
-      } else {
+      } else if (final_state == 0) { // && tt == n1+1
+        prob_tt = alpha[1];
+      } else {// final_state == 2       && tt == n1+1
         prob_tt = alpha[n_states];
       }
+      if (prob_tt <= 0) return negative_infinity();
       log_prob += log(prob_tt);
       
       // Zero out probabilities for (possibly latent) states that are
       // incompatible with the state observed at tt
-      if (states[tt] == 0) {
-        alpha[2:n_states] = rep_row_vector(0.0, n_states-1);
-      } else if (states[tt] == 1) {
+      if (tt <= n1) {
         alpha[1]        = 0.0;
         alpha[n_states] = 0.0;
+      } else if (final_state == 0) {
+        alpha[2:n_states] = rep_row_vector(0.0, n_states-1);
       } else {
         alpha[1:(n_states-1)] = rep_row_vector(0.0, n_states-1);
       }
@@ -98,49 +83,25 @@ functions {
 }
 
 data {
-  // (0, 0)
-  int<lower=0> n00;         // number of intervals with 0 observed at both visits
-  vector<lower=0>[n00] s00; // interval lengths
-
-  // (0, 1, ..., 1, 0)
-  // Sequences are stored flattened; start010[k] gives the first index in
-  // t010_flat for sequence k, and J010[k] gives its length.
-  int<lower=0> n010;
-  int<lower=0> K010;                           // number of unique sequences
-  array[n010] int<lower=1, upper=K010> idx010; // maps individuals to unique sequences
-  array[K010] int<lower=2> J010;               // sequence lengths excluding leading 0 (J >= 2)
-  array[sum(J010)] real<lower=0> t010_flat;    // cumulative times from sequence start
-  array[K010] int<lower=1> start010;           // start indices into flat arrays
-
-  // (0, 1, ..., 1) at end of follow-up
-  int<lower=0> n011;
-  int<lower=0> K011;
-  array[n011] int<lower=1, upper=K011> idx011;
-  array[K011] int<lower=1> J011;               // sequence lengths excluding leading 0 (J >= 1)
-  array[sum(J011)] real<lower=0> t011_flat;
-  array[K011] int<lower=1> start011;
+  real<lower=0> dt; // length of time between each pair of consecutive visits
   
-  // (0, 1, ..., 1, 2) sequences
-  int<lower=0> n012;
-  int<lower=0> K012;
-  array[n012] int<lower=1, upper=K012> idx012;
-  array[K012] int<lower=2> J012;               // J >= 2: at least one 1 precedes the 2
-  array[sum(J012)] real<lower=0> t012_flat;
-  array[K012] int<lower=1> start012;
+  int<lower=0> n00; // total number of (0,0) visit intervals
+  int<lower=0> n02; // total number of (0,2) visit intervals
   
-  // Unique interval lengths across all sequences, for de-duplicating matrix_exp calls.
-  int<lower=1> nd; // number of unique interval lengths ("deltas")
-  array[nd] real<lower=0> unique_deltas;
-  array[sum(J010)] int<lower=1, upper=nd> delta010_idx; // maps flat positions to unique_deltas
-  array[sum(J011)] int<lower=1, upper=nd> delta011_idx;
-  array[sum(J012)] int<lower=1, upper=nd> delta012_idx;
+  int<lower=1> n_types;                              // number of unique sequence types
+  array[n_types] int<lower=1> n1_by_type;            // number of 1's in that sequence
+  array[n_types] int<lower=0, upper=2> fs_by_type;   // final state in that sequence
+  
+  int<lower=1> n_profiles;                           // number of unique sequence profiles
+  array[n_profiles] int<lower=1> n_subjects_profile; // number of subjects with that profile
+  array[n_profiles] int<lower=1> profile_len;        // number of distinct sequence types in the profile
+  
+  array[sum(profile_len)] int<lower=1> profile_key_flat;   // all keys for all profiles
+  array[sum(profile_len)] int<lower=1> profile_count_flat; // all counts for all profiles
+  array[n_profiles] int<lower=1> profile_start;            // maps keys and counts to profiles
   
   int<lower=1> max_M0; // maximum value of M0 considered for approximating NB
   int<lower=1> max_M2; // likewise for M2
-}
-
-transformed data {
-  int max_M = max(max_M0, max_M2);
 }
 
 parameters {
@@ -174,106 +135,75 @@ transformed parameters {
 
 model {
   // Priors
-  log_lambda1 ~ normal(0, 1);
+  log_lambda1 ~ normal(0, 1); // intentionally vague
   
-  log_mean_s10 ~ normal(-1, 1);
-  log_mu0      ~ normal(-0.5, 1);
-  log_phi0     ~ normal(0, 0.75);
+  log_mean_s10 ~ normal(-1.15, 0.5); // log(mu0/lambda0)
+  log_mu0      ~ normal(-0.62, 0.25);
+  log_phi0     ~ normal(0, 0.25);
   
-  log_mean_s12 ~ normal(1, 0.5);
-  log_mu2      ~ normal(0, 1);
+  log_mean_s12 ~ normal(1.14, 0.5);  // log(mu2/lambda2)
+  log_mu2      ~ normal(1.61, 0.5);
   log_phi2     ~ normal(3, 0.5);
   
-  // Log-likelihood for (0, 0)
-  target += exponential_lccdf(s00 | lambda1);
+  // Log-likelihood
+  // (0, 1, ..., 1, 2) sequences and (0, 2) intervals
+  // Pre-compute distributions of M0 and M2
+  vector[max_M0] log_M0_probs;
+  vector[max_M2] log_M2_probs;
+  for (M0 in 1:max_M0) log_M0_probs[M0] = neg_binomial_lpmf(M0-1 | phi0, phi0/mu0);
+  for (M2 in 1:max_M2) log_M2_probs[M2] = neg_binomial_lpmf(M2-1 | phi2, phi2/mu2);
   
-  // Pre-compute joint distribution of (M0,M2)
-  vector[max_M] log_M0_probs;
-  vector[max_M] log_M2_probs;
-  for (M in 1:max_M) {
-    log_M0_probs[M] = neg_binomial_lpmf(M-1 | phi0, phi0/mu0);
-    log_M2_probs[M] = neg_binomial_lpmf(M-1 | phi2, phi2/mu2);
-  }
+  // Condiitonal (on M) log-likelihood contributions for ...
+  // ... (0,0) intervals
+  matrix[max_M0, max_M2] loglik_c_00;
+  // ... (0,2) intervals
+  matrix[max_M0, max_M2] loglik_c_02;
+  // ... (0,1,...,1,x) sequences
+  array[n_types] matrix[max_M0, max_M2] loglik_c_012;
   
-  // Pre-compute log-probabilities of each unique sequence, marginalising over
-  // (M0, M2). The outer loop is over (M0, M2) so that the nd P matrices are
-  // computed once per (M0, M2) and looked up for every sequence, rather than
-  // re-computing matrix_exp for repeated interval lengths.
-  // Use braces to enforce local scope and limit memory allocation needs.
-  {
-    vector[K010] seq010_lp = rep_vector(negative_infinity(), K010);
-    vector[K011] seq011_lp = rep_vector(negative_infinity(), K011);
-    vector[K012] seq012_lp = rep_vector(negative_infinity(), K012);
-    
-    for (M0 in 1:max_M0) {
-      for (M2 in 1:max_M2) {
+  // Pre-compute log-likelihood for each sequence type
+  for (M0 in 1:max_M0) {
+    for (M2 in 1:max_M2) {
+      // Skip pairs with negligible probability, for computational efficiency
+      if (log_M0_probs[M0] + log_M2_probs[M2] < -15) {
+        loglik_c_00[M0, M2] = negative_infinity();
+        loglik_c_02[M0, M2] = negative_infinity();
+        for (ii in 1:n_types) loglik_c_012[ii][M0, M2] = negative_infinity();
+      } else {
         int n_states = M0*M2 + 2;
         matrix[n_states, n_states] Q = Q_fn(M0, M2, lambda0, lambda1, lambda2);
-        real lp_weight = log_M0_probs[M0] + log_M2_probs[M2];
+        matrix[n_states, n_states] P = matrix_exp(Q * dt);
         
-        // Compute P = matrix_exp(Q * delta) for each unique interval length
-        array[nd] matrix[n_states, n_states] P_unique;
-        for (d in 1:nd) {
-          P_unique[d] = matrix_exp(Q * unique_deltas[d]);
-        }
-        
-        // (0, 1, ..., 1, 0): states passed to seq_log_prob are {1, ..., 1, 0}
-        for (k in 1:K010) {
-          int J  = J010[k];
-          int st = start010[k];
-          
-          array[J] int states;
-          for (j in 1:(J-1)) states[j] = 1;
-          states[J] = 0;
-          
-          seq010_lp[k] = log_sum_exp(seq010_lp[k],
-            seq_log_prob(states, delta010_idx[st:(st+J-1)], P_unique) + lp_weight);
-        }
-        
-        // (0, 1, ..., 1): states passed to seq_log_prob are {1, ..., 1}
-        for (k in 1:K011) {
-          int J  = J011[k];
-          int st = start011[k];
-          
-          array[J] int states;
-          for (j in 1:J) states[j] = 1;
-          
-          seq011_lp[k] = log_sum_exp(seq011_lp[k],
-            seq_log_prob(states, delta011_idx[st:(st+J-1)], P_unique) + lp_weight);
-        }
-        
-        // (0, 1, ..., 1, 2): states passed to seq_log_prob are {1, ..., 1, 2}
-        for (k in 1:K012) {
-          int J  = J012[k];
-          int st = start012[k];
-          
-          array[J] int states;
-          for (j in 1:(J-1)) states[j] = 1;
-          states[J] = 2;
-          
-          seq012_lp[k] = log_sum_exp(seq012_lp[k],
-            seq_log_prob(states, delta012_idx[st:(st+J-1)], P_unique) + lp_weight);
+        loglik_c_00[M0, M2] = log(P[1, 1]);
+        loglik_c_02[M0, M2] = log(P[1, n_states]);
+        for (ii in 1:n_types) {
+          loglik_c_012[ii][M0, M2] = seq_log_prob(P, n1_by_type[ii], fs_by_type[ii]);
         }
       }
     }
-    
-    // Log-likelihood for all non-(0,0) sequences, weighted by number of individuals
-    // with each unique sequence via the idx arrays
-    target += sum(seq010_lp[idx010]);
-    target += sum(seq011_lp[idx011]);
-    target += sum(seq012_lp[idx012]);
+  }
+  
+  // Marginalize over M for ...
+  // ... (0,0) intervals
+  target += n00 * log_sum_exp(loglik_c_00 + 
+                              rep_matrix(log_M0_probs,  max_M2) +
+                              rep_matrix(log_M2_probs', max_M0));
+  // ... (0,2) intervals
+  target += n02 * log_sum_exp(loglik_c_02 + 
+                              rep_matrix(log_M0_probs,  max_M2) +
+                              rep_matrix(log_M2_probs', max_M0));
+  // ... (0,1,...,1,x) sequences
+  for (p in 1:n_profiles) {
+    matrix[max_M0, max_M2] loglik_p = rep_matrix(0.0, max_M0, max_M2);
+    for (r in profile_start[p]:(profile_start[p] + profile_len[p] - 1)) {
+      int key   = profile_key_flat[r];
+      int count = profile_count_flat[r];
+      loglik_p += count * loglik_c_012[key];
+    }
+    target += n_subjects_profile[p] * log_sum_exp(loglik_p + 
+                                                  rep_matrix(log_M0_probs,  max_M2) +
+                                                  rep_matrix(log_M2_probs', max_M0));
   }
 }
 
-generated quantities {
-  real prior_log_lambda1  = normal_rng(0, 1);
-
-  real prior_log_mean_s10 = normal_rng(-1, 1);
-  real prior_log_mu0      = normal_rng(-0.5, 1);
-  real prior_log_phi0     = normal_rng(0, 0.75);
-
-  real prior_log_mean_s12 = normal_rng(1, 0.5);
-  real prior_log_mu2      = normal_rng(0, 1);
-  real prior_log_phi2     = normal_rng(3, 0.5);
-}
 

@@ -11,7 +11,7 @@ sim.seeds <- readRDS("sim_seeds_nsim1000.rds")
 .Random.seed <- sim.seeds[[iter]]
 
 N <- 1000
-dat <- admincens(generate_NH(N, fix_M=F), tau=90)
+dat <- admincens(generate_NH(N), tau=90)
 dat$s <- dat$to - dat$from
 
 idx01 <- which(dat$from_z==0 & dat$to_z==1)

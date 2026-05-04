@@ -17,7 +17,7 @@ stan_params012 <- data.frame(
   value = log(c(lambda1, mu2/lambda2, mu2, phi2))
 )
 
-stan_params012_recur <- data.frame(
+stan_params <- data.frame(
   param = paste0("log_", c("lambda1", "mean_s10", "mean_s12", "mu0", "phi0", "mu2", "phi2")),
   value = log(c(lambda1, mu0/lambda0, mu2/lambda2, mu0, phi0, mu2, phi2))
 )
@@ -42,23 +42,20 @@ stan_params012_recur <- data.frame(
 #      (i, transition type) but allow it to vary across individuals such that
 #      it acts as a random effect.
 
-###############################################################################
-# Competing gammas representation
-###############################################################################
 # Generate sojourn time in state 0 before -> 1
 s01.fn <- function(N) { rexp(N, rate=lambda1) }
 
 # Generate sojourn time in state 1 before -> 0
-s10.fn <- function(N, M=NA) {
-  if (anyNA(M)) {
+s10.fn <- function(N, M=NULL) {
+  if (is.null(M)) {
     M <- rnbinom(N, size=phi0, mu=mu0) + 1
   }
   rgamma(N, shape=M, rate=lambda0)
 }
 
 # Generate sojourn time in state 1 before -> 2
-s12.fn <- function(N, M=NA) {
-  if (anyNA(M)) {
+s12.fn <- function(N, M=NULL) {
+  if (is.null(M)) {
     M <- rnbinom(N, size=phi2, mu=mu2) + 1
   }
   rgamma(N, shape=M, rate=lambda2)
@@ -89,23 +86,15 @@ appear <- function(strt, strt_z){
 # Simulate clearance (resolution) of HPV infection
 resolve <- function(strt, strt_z, M){
   n <- length(strt)
-  clr <- s10.fn(n, M[1])
-  prg <- s12.fn(n, M[2])
+  clr <- s10.fn(n, M[[1]])
+  prg <- s12.fn(n, M[[2]])
   t_trans <- ifelse(strt_z==2, Inf, strt + pmin(clr, prg))
   z_trans <- ifelse(strt_z==2, 2, ifelse(clr<prg, 0, 2))
   return(data.frame(id=seq(n), from=strt, to=t_trans, from_z=strt_z, to_z=z_trans))
 }
 
 # Create natural history (NH)
-generate_NH <- function(n, fix_M=T) {
-  if (fix_M) {
-    M0 <- rnbinom(1, size=phi0, mu=mu0) + 1
-    M2 <- rnbinom(1, size=phi2, mu=mu2) + 1
-    M <- c(M0, M2)
-  } else {
-    M <- c(NA, NA)
-  }
-  
+generate_NH <- function(n, M=list(NULL, NULL)) {
   out <- data.frame()
   out <- rbind(out, appear(rep(0,n), rep(0,n)))   # 1st appearance
   out <- rbind(out, resolve(out$to, out$to_z, M)) # 1st infection resolved
@@ -203,10 +192,12 @@ process.panel.012 <- function(pdat, visit.freq) {
   
   s0   <- nvisits$n[which(nvisits$to_z==0)] * visit.freq
   idx0 <- which(s0 > 0)
+  
   # Subjects with n1=0 but n2>0: observed jumping from state 0 to state 2
   n02 <- sum(nvisits$n[which(nvisits$to_z==1)] == 0 & 
                nvisits$n[which(nvisits$to_z==2)] > 0)
   
+  # Count the number of visits in state 1 for each individual
   n1.df <- as.data.frame(table(nvisits$n[which(nvisits$to_z==1)]))
   n1.df$Var1 <- as.integer(as.character(n1.df$Var1)) # convert from factor
   n1.df <- n1.df[which(n1.df$Var1 != 0),]
@@ -226,13 +217,26 @@ process.panel.012 <- function(pdat, visit.freq) {
 }
 
 # Prep data for Stan under the process with recurrent states 0 and 1
-process.panel <- function(pdat) {
-  # Label sequence starts; a new 01x sequence begins when from_z=0 and to_z=1
+process.panel <- function(pdat, visit.freq) {
+  ## Aggregate lengths of total observed sojourns in state 0
+  npairs <- pdat %>%
+    group_by(id, from_z, to_z) %>%
+    summarize(n=n(), .groups="drop") %>%
+    complete(id, from_z=0:2, to_z=0:2, fill=list(n=0))
+  
+  ## Number of intervals with (0,0) observed at consecutive visits
+  n00 <- sum(npairs$n[which(npairs$from_z==0 & npairs$to_z==0)])
+  
+  ## Subjects with n1=0 but n2>0: observed jumping from state 0 to state 2
+  n02 <- sum(npairs$n[which(npairs$from_z==0 & npairs$to_z==2)])
+  
+  ## Identify all unique (0, 1, ..., 1, x) sequences in the data
+  # Label sequence starts; a new sequence begins when from_z=0 and to_z=1
   pdat <- pdat %>%
-    arrange(id, t_prev) %>%
+    arrange(id, t) %>%
     group_by(id) %>%
     mutate(
-      seq_start = from_z == 0 & to_z == 1,
+      seq_start = from_z==0 & to_z==1,
       seq_id    = cumsum(seq_start)
     ) %>%
     ungroup()
@@ -240,109 +244,81 @@ process.panel <- function(pdat) {
   # Each sequence is the initial (0,1) row plus all following (1,*) rows, up to and
   # including the first row where to_z changes back to 0 or follow-up ends with to_z=1.
   sequences <- pdat %>%
-    filter(seq_start | from_z==1) %>%
+    filter(seq_start | from_z==1) %>%   # exclude (0,0) and (0,2) rows
     group_by(id, seq_id) %>%
     summarise(
-      dt_seq      = list(dt),
-      t_seq       = list(cumsum(dt)), # cumulative times from sequence start
+      n1          = sum(to_z==1),
       final_state = last(to_z),
       .groups     = "drop"
-    ) %>%
-    mutate(key = sapply(dt_seq, paste, collapse="_"))
-  
-  # Helper to build flattened arrays from a set of unique sequences
-  flatten_seqs <- function(unique_seqs, all_seqs) {
-    J_vec     <- sapply(unique_seqs$t_seq, length)
-    start_vec <- c(1, cumsum(J_vec[-length(J_vec)])+1)
-    t_flat    <- unlist(unique_seqs$t_seq)
-    idx       <- all_seqs %>%
-      left_join(unique_seqs %>% select(key, k), by="key") %>%
-      pull(k)
-    list(
-      n       = nrow(all_seqs),
-      K       = nrow(unique_seqs),
-      idx     = idx,
-      J       = J_vec,
-      t_flat  = t_flat,
-      start   = start_vec
     )
-  }
   
-  # (0, 1, ..., 1, 0) sequences
-  seqs_010   <- sequences %>% filter(final_state==0)
-  unique_010 <- seqs_010 %>%
-    distinct(key, .keep_all = TRUE) %>%
-    mutate(k = row_number())
-  f010 <- flatten_seqs(unique_010, seqs_010)
+  # Key describing the properties of each type of sequence
+  seq_key <- aggregate(seq_id ~ n1 + final_state, FUN=length, data=sequences)
+  seq_key <- cbind(key=1:nrow(seq_key), seq_key)
+  names(seq_key)[ncol(seq_key)] <- "count"
   
-  # (0, 1, ..., 1) sequences
-  seqs_011   <- sequences %>% filter(final_state==1)
-  unique_011 <- seqs_011 %>%
-    distinct(key, .keep_all = TRUE) %>%
-    mutate(k = row_number())
-  f011 <- flatten_seqs(unique_011, seqs_011)
+  # Merge the key labels back into the dataframe of sequences
+  sequences <- merge(sequences, seq_key[,1:3], sort=F)
+  # Count the number of each sequence type for each individual
+  seq_agg <- aggregate(seq_id ~ id + key, FUN=length, data=sequences)
+  names(seq_agg)[ncol(seq_agg)] <- "count"
   
-  # (0, 1, ..., 1, 2) sequences
-  seqs_012   <- sequences %>% filter(final_state==2)
-  unique_012 <- seqs_012 %>%
-    distinct(key, .keep_all = TRUE) %>%
-    mutate(k = row_number())
-  f012 <- flatten_seqs(unique_012, seqs_012)
+  # Create a sequence profile string for each subject from their (key, count) pairs
+  subject_profiles <- seq_agg %>%
+    arrange(id, key) %>%   # sort by key so order of sequences doesn't matter
+    group_by(id) %>%
+    summarise(
+      profile = paste(paste(key, count, sep="x"), collapse="_"),
+      .groups = "drop"
+    ) %>%
+    # Assign a profile_id and count how many subjects share each profile
+    group_by(profile) %>%
+    mutate(
+      profile_id = cur_group_id(),
+      n_subjects = n()
+    ) %>%
+    ungroup()
   
-  # Compute interval lengths from cumulative times for all positions in each flat array
-  deltas010 <- numeric(sum(f010$J))
-  for (k in seq_len(f010$K)) {
-    st      <- f010$start[k]
-    J       <- f010$J[k]
-    times_k <- f010$t_flat[st:(st + J - 1)]
-    deltas010[st:(st + J - 1)] <- diff(c(0, times_k))
-  }
+  # Keep one representative subject per profile, then join back to seq_agg
+  representative_ids <- subject_profiles %>%
+    group_by(profile_id) %>%
+    slice(1) %>%
+    ungroup() %>%
+    select(id, profile_id, n_subjects)
   
-  deltas011 <- numeric(sum(f011$J))
-  for (k in seq_len(f011$K)) {
-    st      <- f011$start[k]
-    J       <- f011$J[k]
-    times_k <- f011$t_flat[st:(st + J - 1)]
-    deltas011[st:(st + J - 1)] <- diff(c(0, times_k))
-  }
+  seq_agg_deduped <- seq_agg %>%
+    inner_join(representative_ids, by="id") %>%
+    select(profile_id, n_subjects, key, count)
   
-  deltas012 <- numeric(sum(f012$J))
-  for (k in seq_len(f012$K)) {
-    st      <- f012$start[k]
-    J       <- f012$J[k]
-    times_k <- f012$t_flat[st:(st + J - 1)]
-    deltas012[st:(st + J - 1)] <- diff(c(0, times_k))
-  }
-  
-  unique_deltas <- sort(unique(c(deltas010, deltas011, deltas012)))
+  # Flatten profile-level sequence aggregates into ragged arrays for Stan
+  flat <- seq_agg_deduped %>%
+    arrange(profile_id, key) %>%
+    group_by(profile_id) %>%
+    summarise(
+      keys      = list(key),
+      counts    = list(count),
+      n_seqtypes = n(),
+      n_subjects = first(n_subjects),
+      .groups = "drop"
+    )
   
   return(list(
-    n010       = f010$n,
-    K010       = f010$K,
-    idx010     = f010$idx,
-    J010       = f010$J,
-    t010_flat  = f010$t_flat,
-    start010   = f010$start,
+    dt = visit.freq,
+    n00 = n00,
+    n02 = n02,
     
-    n011       = f011$n,
-    K011       = f011$K,
-    idx011     = f011$idx,
-    J011       = f011$J,
-    t011_flat  = f011$t_flat,
-    start011   = f011$start,
+    n_types    = nrow(seq_key),       # number of unique sequence types
+    n1_by_type = seq_key$n1,          # number of 1's in that sequence
+    fs_by_type = seq_key$final_state, # final state in that sequence
     
-    n012       = f012$n,
-    K012       = f012$K,
-    idx012     = f012$idx,
-    J012       = f012$J,
-    t012_flat  = f012$t_flat,
-    start012   = f012$start,
+    n_profiles         = nrow(flat),       # number of unique sequence profiles
+    n_subjects_profile = flat$n_subjects,  # number of subjects with that profile
+    profile_len        = flat$n_seqtypes,  # number of distinct sequence types in the profile
     
-    nd            = length(unique_deltas),
-    unique_deltas = unique_deltas,
-    delta010_idx  = match(deltas010, unique_deltas),
-    delta011_idx  = match(deltas011, unique_deltas),
-    delta012_idx  = match(deltas012, unique_deltas)
+    # Ragged array
+    profile_key_flat   = unlist(flat$keys),   # all keys for all profiles
+    profile_count_flat = unlist(flat$counts), # all counts for all profiles
+    profile_start      = c(1, cumsum(flat$n_seqtypes[-nrow(flat)]) + 1)
   ))
 }
 

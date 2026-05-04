@@ -114,7 +114,7 @@ model {
   
   int n_states;
   
-  vector[max_M] loglik_m_02;       // marginal log-likelihood for (0,2) intervals
+  vector[max_M] loglik_c_02;       // conditional (on M) log-likelihood for (0,2) intervals
   matrix[nn1, max_M] loglik_c_012; // conditional (on M) log-likelihood for (0,1,...,2) sequences
   
   for (M in 1:max_M) {
@@ -122,16 +122,16 @@ model {
     matrix[n_states, n_states] Q = Q_fn_012(M, lambda1, lambda2);
     matrix[n_states, n_states] P = matrix_exp(Q * dt);
     
-    loglik_m_02[M] = log(P[1, n_states]);
+    loglik_c_02[M] = log(P[1, n_states]);
     
     for (ii in 1:nn1) {
       loglik_c_012[ii, M] = seq_log_prob(P, n1_unique[ii]);
     }
   }
   
-  target += n02 * log_sum_exp(loglik_m_02 + log_M_probs);
+  // Marginalize over M
+  target += n02 * log_sum_exp(loglik_c_02 + log_M_probs);
   
-  // Marginalize conditional terms over M
   matrix[nn1, max_M] loglik_m_012 = loglik_c_012 + rep_matrix(log_M_probs', nn1);
   
   for (ii in 1:nn1) {

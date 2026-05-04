@@ -10,33 +10,30 @@ sim.seeds <- readRDS("sim_seeds_nsim1000.rds")
 
 .Random.seed <- sim.seeds[[iter]]
 
-pdat <- panelize(
-  generate_NH(n=2000),
-  visit.freq=1, tau=90
-)
+N <- 1000
+visit.freq <- 3
 
-idx00 <- which(pdat$from_z==0 & pdat$to_z==0)
+M0 <- rnbinom(N, size=phi0, mu=mu0) + 1
+M2 <- rnbinom(N, size=phi2, mu=mu2) + 1
 
-stan_data <- list(
-  n00 = length(idx00),
-  s00 = pdat$dt[idx00],
-  
-  max_M0 = 5,
-  max_M2 = 12
-)
-stan_data <- c(stan_data, process.panel(pdat))
+pdat <- panelize(generate_NH(N, list(M0, M2)), visit.freq, tau=90)
+
+# qnbinom(0.99, size=phi0, mu=mu0) + 1 # used to determine good value for max_M0
+# qnbinom(0.99, size=phi2, mu=mu2) + 1 # ... max_M2
+
+stan_data <- c(process.panel(pdat, visit.freq), list(max_M0=5, max_M2=15))
 
 init_fn <- function() {
   list(
-    log_lambda1  = runif(1, min=-3, max=0),
+    log_lambda1  = runif(1, min=-3,   max=0),
     
-    log_mean_s10 = runif(1, min=-4, max=-1),
-    log_mu0      = runif(1, min=-2, max=1),
-    log_phi0     = runif(1, min=-1, max=1),
+    log_mean_s10 = runif(1, min=-2,   max=-1),
+    log_mu0      = runif(1, min=-1,   max=0),
+    log_phi0     = runif(1, min=-0.5, max=0.5),
     
-    log_mean_s12 = runif(1, min=1,  max=3),
-    log_mu2      = runif(1, min=0,  max=2),
-    log_phi2     = runif(1, min=1,  max=3.3)
+    log_mean_s12 = runif(1, min=1,    max=2),
+    log_mu2      = runif(1, min=1,    max=2),
+    log_phi2     = runif(1, min=2.5,  max=3.3)
   )
 }
 
@@ -48,9 +45,10 @@ stan_model <- cmdstan_model("model.stan")
 model_fit <- stan_model$sample(
   stan_data,
   init = init_fn,
-  iter_sampling = 1000,
+  iter_sampling = 2000,
   iter_warmup = 1000,
-  parallel_chains = 4,
+  chains = 2,
+  parallel_chains = 2,
   refresh = 5,
   save_warmup = TRUE
 )
