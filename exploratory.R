@@ -104,7 +104,7 @@ plot.sojourn.C("hazard")
 M.vals <- 1:100
 
 # Plot sojourn distribution marginal over M
-plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="density") {
+plot.sojourn.M <- function(lambda, size.vals, mu.vals, max.x, target, out.col="density") {
   test.params <- expand.grid(x=seq(0.01, max.x, by=0.01), size=size.vals, mu=mu.vals)
   
   df <- test.params
@@ -112,8 +112,8 @@ plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="
     M.pmf <- dnbinom(M.vals-1, size=df$size[r], mu=df$mu[r])
     
     x <- df$x[r]
-    dens <- dgamma(x, shape=M.vals, rate=lambda2)
-    surv <- pgamma(x, shape=M.vals, rate=lambda2, lower.tail=F)
+    dens <- dgamma(x, shape=M.vals, rate=lambda)
+    surv <- pgamma(x, shape=M.vals, rate=lambda, lower.tail=F)
     
     t(M.pmf) %*% cbind(dens, surv, dens/surv)
   })))
@@ -152,7 +152,7 @@ plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="
     scale_colour_brewer(palette="Dark2", guide="none") +
     scale_fill_brewer(palette="Dark2", guide="none") +
     labs(
-      title    = bquote(bold("Gamma" ~ .(out.col) * ": rate" ~ lambda[2]==.(lambda2) ~
+      title    = bquote(bold("Erlang" ~ .(out.col) * ": rate" ~ lambda==.(lambda) ~
                                ", shape M ~ NB(" * mu * ", " * phi * ")+1")),
       x        = "x",
       y        = paste0(y.fn, "(x)")
@@ -163,16 +163,18 @@ plot.sojourn.M <- function(lambda2, size.vals, mu.vals, max.x, target, out.col="
 # Try to emulate 1->0 density
 size.vals <- c(1, 5, 50)
 mu.vals <- c(0.1, 0.54, 1)
-plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "d10")
-plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "hazard")
-plot.sojourn.M(lambda2=1.7, size.vals, mu.vals, max.x=5, "none", "survival")
+plot.sojourn.M(lambda=1.7, size.vals, mu.vals, max.x=5, "d10")
+# save as params10.png (Width=500, Height=450)
+plot.sojourn.M(lambda=1.7, size.vals, mu.vals, max.x=5, "none", "hazard")
+plot.sojourn.M(lambda=1.7, size.vals, mu.vals, max.x=5, "none", "survival")
 
 # Try to emulate 1->2 density
 size.vals <- c(1, 5, 20, 50)
 mu.vals <- c(1, 2, 5, 8)
-plot.sojourn.M(lambda2=1.6, size.vals, mu.vals, max.x=10, "d12")
-plot.sojourn.M(lambda2=1.6, size.vals, mu.vals, max.x=10, "none", "hazard")
-plot.sojourn.M(lambda2=1.6, size.vals, mu.vals, max.x=10, "none", "survival")
+plot.sojourn.M(lambda=1.6, size.vals, mu.vals, max.x=10, "d12")
+# save as params12.png (Width=600, Height=500)
+plot.sojourn.M(lambda=1.6, size.vals, mu.vals, max.x=10, "none", "hazard")
+plot.sojourn.M(lambda=1.6, size.vals, mu.vals, max.x=10, "none", "survival")
 
 
 
@@ -208,7 +210,10 @@ ES.fn(lambda=1.7, phi=1, mu=0.54) # 0.906
 
 # Try to emulate 1->2 mean sojourn time
 ES.fn(lambda=1.5, phi=20, mu=8) # 6.000
-ES.fn(lambda=1.6, phi=20, mu=8) # 5.625
+ES.fn(lambda=1.6, phi=20, mu=8) # 5.625; hard to estimate?
+ES.fn(lambda=1.6, phi=20, mu=5) # 3.750
+ES.fn(lambda=1.6, phi=20, mu=6) # 4.375
+ES.fn(lambda=1.6, phi=20, mu=7) # 5.000
 1/rho2 * gamma(1 + 1/kappa2)    # 5.542
 
 # Note: For fixed lambda and mu, phi does not affect the mean
@@ -224,6 +229,9 @@ VarS.fn(lambda=1.7, phi=1, mu=0.54)                      # 0.821
 VarS.fn(lambda=1.5, phi=20, mu=8)                        # 8.978
 VarS.fn(lambda=1.6, phi=20, mu=8)                        # 7.891
 VarS.fn(lambda=1.6, phi=50, mu=8)                        # 7.141; hard to estimate phi
+VarS.fn(lambda=1.6, phi=50, mu=5)                        # 4.492
+VarS.fn(lambda=1.6, phi=50, mu=6)                        # 5.359
+VarS.fn(lambda=1.6, phi=50, mu=7)                        # 6.242
 1/(rho2^2) * ( gamma(1+2/kappa2) - gamma(1+1/kappa2)^2 ) # 5.917
 
 
