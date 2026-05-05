@@ -85,20 +85,19 @@ functions {
 data {
   real<lower=0> dt; // length of time between each pair of consecutive visits
   
-  int<lower=0> n00; // total number of (0,0) visit intervals
-  int<lower=0> n02; // total number of (0,2) visit intervals
-  
-  int<lower=1> n_types;                              // number of unique sequence types
+  int<lower=1> n_types;                              // number of unique (0,1,...,1,x) sequence types
   array[n_types] int<lower=1> n1_by_type;            // number of 1's in that sequence
   array[n_types] int<lower=0, upper=2> fs_by_type;   // final state in that sequence
   
-  int<lower=1> n_profiles;                           // number of unique sequence profiles
+  int<lower=1> n_profiles;                           // number of unique sequence profiles, including (0,0) and (0,2)
   array[n_profiles] int<lower=1> n_subjects_profile; // number of subjects with that profile
-  array[n_profiles] int<lower=1> profile_len;        // number of distinct sequence types in the profile
+  array[n_profiles] int<lower=0> profile_n00;        // number of (0,0) intervals in the profile
+  array[n_profiles] int<lower=0> profile_n02;        // ... (0,2) intervals
+  array[n_profiles] int<lower=0> profile_len;        // number of distinct (0,1,...,1,x) sequence types in the profile
+  array[n_profiles] int<lower=1> profile_start;      // maps keys and counts to profiles
   
   array[sum(profile_len)] int<lower=1> profile_key_flat;   // all keys for all profiles
   array[sum(profile_len)] int<lower=1> profile_count_flat; // all counts for all profiles
-  array[n_profiles] int<lower=1> profile_start;            // maps keys and counts to profiles
   
   int<lower=1> max_M0; // maximum value of M0 considered for approximating NB
   int<lower=1> max_M2; // likewise for M2
@@ -183,22 +182,16 @@ model {
     }
   }
   
-  // Marginalize over M for ...
-  // ... (0,0) intervals
-  target += n00 * log_sum_exp(loglik_c_00 + 
-                              rep_matrix(log_M0_probs,  max_M2) +
-                              rep_matrix(log_M2_probs', max_M0));
-  // ... (0,2) intervals
-  target += n02 * log_sum_exp(loglik_c_02 + 
-                              rep_matrix(log_M0_probs,  max_M2) +
-                              rep_matrix(log_M2_probs', max_M0));
-  // ... (0,1,...,1,x) sequences
+  // Marginalize over M
   for (p in 1:n_profiles) {
-    matrix[max_M0, max_M2] loglik_p = rep_matrix(0.0, max_M0, max_M2);
-    for (r in profile_start[p]:(profile_start[p] + profile_len[p] - 1)) {
-      int key   = profile_key_flat[r];
-      int count = profile_count_flat[r];
-      loglik_p += count * loglik_c_012[key];
+    matrix[max_M0, max_M2] loglik_p = profile_n00[p] * loglik_c_00 +   // (0,0) contribution
+                                      profile_n02[p] * loglik_c_02;    // (0,2) contribution
+    if (profile_len[p] > 0) { // i.e. if there are any (0,1,...,1,x) sequences
+      for (r in profile_start[p]:(profile_start[p] + profile_len[p] - 1)) {
+        int key   = profile_key_flat[r];
+        int count = profile_count_flat[r];
+        loglik_p += count * loglik_c_012[key];
+      }
     }
     target += n_subjects_profile[p] * log_sum_exp(loglik_p + 
                                                   rep_matrix(log_M0_probs,  max_M2) +

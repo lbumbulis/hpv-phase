@@ -218,39 +218,23 @@ process.panel.012 <- function(pdat, visit.freq) {
 
 # Prep data for Stan under the process with recurrent states 0 and 1
 process.panel <- function(pdat, visit.freq) {
-  ## Aggregate lengths of total observed sojourns in state 0
-  npairs <- pdat %>%
-    group_by(id, from_z, to_z) %>%
-    summarize(n=n(), .groups="drop") %>%
-    complete(id, from_z=0:2, to_z=0:2, fill=list(n=0))
+  # Per-subject (0,0) and (0,2) interval counts
+  subject_interval_counts <- pdat %>%
+    filter(from_z==0, to_z %in% c(0,2)) %>%
+    count(id, to_z) %>%
+    pivot_wider(names_from=to_z, values_from=n, names_prefix="n0", values_fill=0)
   
-  ## Number of intervals with (0,0) observed at consecutive visits
-  n00 <- sum(npairs$n[which(npairs$from_z==0 & npairs$to_z==0)])
-  
-  ## Subjects with n1=0 but n2>0: observed jumping from state 0 to state 2
-  n02 <- sum(npairs$n[which(npairs$from_z==0 & npairs$to_z==2)])
-  
-  ## Identify all unique (0, 1, ..., 1, x) sequences in the data
-  # Label sequence starts; a new sequence begins when from_z=0 and to_z=1
+  # Identify all (0,1,...,1,x) sequences
   pdat <- pdat %>%
     arrange(id, t) %>%
     group_by(id) %>%
-    mutate(
-      seq_start = from_z==0 & to_z==1,
-      seq_id    = cumsum(seq_start)
-    ) %>%
+    mutate(seq_start=from_z==0 & to_z==1, seq_id=cumsum(seq_start)) %>%
     ungroup()
   
-  # Each sequence is the initial (0,1) row plus all following (1,*) rows, up to and
-  # including the first row where to_z changes back to 0 or follow-up ends with to_z=1.
   sequences <- pdat %>%
     filter(seq_start | from_z==1) %>%   # exclude (0,0) and (0,2) rows
     group_by(id, seq_id) %>%
-    summarise(
-      n1          = sum(to_z==1),
-      final_state = last(to_z),
-      .groups     = "drop"
-    )
+    summarise(n1=sum(to_z==1), final_state=last(to_z), .groups="drop")
   
   # Key describing the properties of each type of sequence
   seq_key <- aggregate(seq_id ~ n1 + final_state, FUN=length, data=sequences)
@@ -263,62 +247,60 @@ process.panel <- function(pdat, visit.freq) {
   seq_agg <- aggregate(seq_id ~ id + key, FUN=length, data=sequences)
   names(seq_agg)[ncol(seq_agg)] <- "count"
   
-  # Create a sequence profile string for each subject from their (key, count) pairs
-  subject_profiles <- seq_agg %>%
+  # Build per-subject profile strings, including (0,0) and (0,2) intervals
+  seq_summary <- seq_agg %>%
     arrange(id, key) %>%   # sort by key so order of sequences doesn't matter
     group_by(id) %>%
-    summarise(
-      profile = paste(paste(key, count, sep="x"), collapse="_"),
-      .groups = "drop"
-    ) %>%
-    # Assign a profile_id and count how many subjects share each profile
+    summarise(seq_str=paste(paste(key, count, sep="x"), collapse="_"), .groups="drop")
+  
+  subject_profiles <- data.frame(id=unique(pdat$id)) %>%
+    left_join(subject_interval_counts, by="id") %>%
+    replace_na(list(n00=0, n02=0)) %>%
+    left_join(seq_summary, by="id") %>%
+    replace_na(list(seq_str="")) %>%
+    mutate(profile=paste(seq_str, n00, n02, sep="|")) %>%
     group_by(profile) %>%
-    mutate(
-      profile_id = cur_group_id(),
-      n_subjects = n()
-    ) %>%
+    mutate(profile_id=cur_group_id(), n_subjects=n()) %>%
     ungroup()
   
-  # Keep one representative subject per profile, then join back to seq_agg
+  # One representative per profile
   representative_ids <- subject_profiles %>%
     group_by(profile_id) %>%
     slice(1) %>%
     ungroup() %>%
-    select(id, profile_id, n_subjects)
-  
-  seq_agg_deduped <- seq_agg %>%
-    inner_join(representative_ids, by="id") %>%
-    select(profile_id, n_subjects, key, count)
+    select(id, profile_id, n_subjects, n00, n02)
   
   # Flatten profile-level sequence aggregates into ragged arrays for Stan
-  flat <- seq_agg_deduped %>%
-    arrange(profile_id, key) %>%
-    group_by(profile_id) %>%
-    summarise(
-      keys      = list(key),
-      counts    = list(count),
-      n_seqtypes = n(),
-      n_subjects = first(n_subjects),
-      .groups = "drop"
-    )
+  flat <- representative_ids %>%
+    left_join(
+      seq_agg %>%
+        inner_join(representative_ids %>% select(id, profile_id), by="id") %>%
+        arrange(profile_id, key) %>%
+        group_by(profile_id) %>%
+        summarise(keys=list(key), counts=list(count), n_seqtypes=n(), .groups="drop"),
+      by="profile_id"
+    ) %>%
+    replace_na(list(n_seqtypes=0))
+  
+  # Replace NULL list entries (profiles with no sequences) with empty integer vectors
+  flat$keys   <- lapply(flat$keys,   function(x) if (is.null(x)) integer(0) else x)
+  flat$counts <- lapply(flat$counts, function(x) if (is.null(x)) integer(0) else x)
   
   return(list(
     dt = visit.freq,
-    n00 = n00,
-    n02 = n02,
     
-    n_types    = nrow(seq_key),       # number of unique sequence types
-    n1_by_type = seq_key$n1,          # number of 1's in that sequence
-    fs_by_type = seq_key$final_state, # final state in that sequence
+    n_types    = nrow(seq_key),
+    n1_by_type = seq_key$n1,
+    fs_by_type = seq_key$final_state,
     
-    n_profiles         = nrow(flat),       # number of unique sequence profiles
-    n_subjects_profile = flat$n_subjects,  # number of subjects with that profile
-    profile_len        = flat$n_seqtypes,  # number of distinct sequence types in the profile
-    
-    # Ragged array
-    profile_key_flat   = unlist(flat$keys),   # all keys for all profiles
-    profile_count_flat = unlist(flat$counts), # all counts for all profiles
-    profile_start      = c(1, cumsum(flat$n_seqtypes[-nrow(flat)]) + 1)
+    n_profiles         = nrow(flat),
+    n_subjects_profile = flat$n_subjects,
+    profile_n00        = flat$n00,
+    profile_n02        = flat$n02,
+    profile_len        = flat$n_seqtypes,
+    profile_start      = c(1, cumsum(flat$n_seqtypes[-nrow(flat)]) + 1),
+    profile_key_flat   = unlist(flat$keys),
+    profile_count_flat = unlist(flat$counts)
   ))
 }
 
