@@ -45,8 +45,9 @@ stan_model <- cmdstan_model("model.stan")
 model_fit <- stan_model$sample(
   stan_data,
   init = init_fn,
-  iter_sampling = 2000,
+  iter_sampling = 1000,
   iter_warmup = 1000,
+  adapt_delta = 0.99,
   chains = 2,
   parallel_chains = 2,
   refresh = 5,

@@ -3,8 +3,15 @@ library(ggplot2)
 library(bayesplot)
 
 ##### Inspect results from a single model fit #################################
-mcmc_trace(model_fit$draws(), pars=stan_params12$param)
+model_fit <- readRDS("./results/model_iter31.rds")
+
+mcmc_trace(model_fit$draws(inc_warmup=T), pars=stan_params$param, n_warmup=1000)
 model_fit$summary()
+
+# Check which parameters are associated with divergences
+mcmc_pairs(model_fit$draws(), np=nuts_params(model_fit), pars=stan_params$param)
+
+mcmc_hist(model_fit$draws(stan_params$param))
 
 ##### Process results from many replicates ####################################
 library(dplyr)
@@ -21,7 +28,7 @@ all_draws_list <- lapply(model_fit_list, function(m) {
 })
 all_draws <- bind_rows(all_draws_list, .id="iter") %>%
   mutate(iter=as.numeric(iter))
-saveRDS(all_draws, file=paste0("model", model_type, "_draws.rds"))
+# saveRDS(all_draws, file=paste0("model", model_type, "_draws.rds"))
 
 all_summary <- as.data.frame(
   all_draws %>%
