@@ -2,6 +2,28 @@
 library(ggplot2)
 library(bayesplot)
 
+lambda0 <- 1.7
+mu0 <- 0.54
+phi0 <- 1
+
+lambda1 <- 0.15
+
+lambda2 <- 1.6
+mu2 <- 8
+phi2 <- 20
+
+stan_params012 <- data.frame(
+  param = paste0("log_", c("lambda1", "mean_s12", "mu2", "phi2")),
+  value = log(c(lambda1, mu2/lambda2, mu2, phi2))
+)
+
+mu2 <- 5
+
+stan_params <- data.frame(
+  param = paste0("log_", c("lambda1", "mean_s10", "mean_s12", "mu0", "phi0", "mu2", "phi2")),
+  value = log(c(lambda1, mu0/lambda0, mu2/lambda2, mu0, phi0, mu2, phi2))
+)
+
 ##### Inspect results from a single model fit #################################
 model_fit <- readRDS("./results/model_iter31.rds")
 
@@ -90,7 +112,7 @@ plot_est <- function(est_se, truth) {
 model_type <- ""
 truth <- stan_params
 
-all_summary <- readRDS(paste0("./results/model", model_type, "_summary.rds"))
+all_summary <- readRDS(paste0("./bayes/results/model", model_type, "_summary.rds"))
 
 coverage(all_summary, truth)
 plot_est(all_summary, truth)

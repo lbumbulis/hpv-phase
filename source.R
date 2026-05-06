@@ -2,25 +2,31 @@
 library(dplyr)
 library(tidyr)
 
-lambda0 <- 1.7
-mu0 <- 0.54
-phi0 <- 1
-
-lambda1 <- 0.15
-
-lambda2 <- 1.6
-mu2 <- 5   # ideally 8, but reduced for computation reasons
-phi2 <- 20
-
-stan_params012 <- data.frame(
-  param = paste0("log_", c("lambda1", "mean_s12", "mu2", "phi2")),
-  value = log(c(lambda1, mu2/lambda2, mu2, phi2))
-)
-
-stan_params <- data.frame(
-  param = paste0("log_", c("lambda1", "mean_s10", "mean_s12", "mu0", "phi0", "mu2", "phi2")),
-  value = log(c(lambda1, mu0/lambda0, mu2/lambda2, mu0, phi0, mu2, phi2))
-)
+set.lambda <- function(theta, max.M, tau, prop0, p2) {
+  M.probs <- dnbinom((1:max.M)-1, size=theta$phi2, mu=theta$mu2)
+  
+  # Solve for l2 in this equation for the proportion of time spent in state 0 vs. 1:
+  # 1/l1 / (1/l1 + mu/l2) = prop0
+  l2.fn <- function(l1) { l1*theta$mu2*prop0 / (1-prop0) }
+  
+  uniroot.fn <- function(log.l1) {
+    l1 <- exp(log.l1)
+    l2 <- l2.fn(l1)
+    
+    p2.M.fn <- Vectorize(function(M) {
+      int.outer <- function(s0) {
+        pgamma(tau-s0, shape=M, rate=l2) * dexp(s0, rate=l1)
+      }
+      integrate(int.outer, lower=0, upper=tau)$value
+    })
+    as.numeric(p2.M.fn(1:max.M) %*% M.probs) - p2 # set the prob. of failure by tau
+  }
+  
+  res <- uniroot(uniroot.fn, c(-6,2))
+  theta$lambda1 <- exp(res$root)
+  theta$lambda2 <- l2.fn(theta$lambda1)
+  return(theta)
+}
 
 # Note on data generation:
 # * In the competing gammas representation we generate a new M for each
@@ -43,22 +49,22 @@ stan_params <- data.frame(
 #      it acts as a random effect.
 
 # Generate sojourn time in state 0 before -> 1
-s01.fn <- function(N) { rexp(N, rate=lambda1) }
+s01.fn <- function(N, l1) { rexp(N, rate=l1) }
 
 # Generate sojourn time in state 1 before -> 0
-s10.fn <- function(N, M=NULL) {
+s10.fn <- function(N, theta, M=NULL) {
   if (is.null(M)) {
-    M <- rnbinom(N, size=phi0, mu=mu0) + 1
+    M <- rnbinom(N, size=theta$phi0, mu=theta$mu0) + 1
   }
-  rgamma(N, shape=M, rate=lambda0)
+  rgamma(N, shape=M, rate=theta$lambda0)
 }
 
 # Generate sojourn time in state 1 before -> 2
-s12.fn <- function(N, M=NULL) {
+s12.fn <- function(N, theta, M=NULL) {
   if (is.null(M)) {
-    M <- rnbinom(N, size=phi2, mu=mu2) + 1
+    M <- rnbinom(N, size=theta$phi2, mu=theta$mu2) + 1
   }
-  rgamma(N, shape=M, rate=lambda2)
+  rgamma(N, shape=M, rate=theta$lambda2)
 }
 
 # Convert progressive process data into natural history dataframe

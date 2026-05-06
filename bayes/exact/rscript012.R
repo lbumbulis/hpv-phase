@@ -6,6 +6,16 @@ library(cmdstanr)
 
 source("source.R")
 
+lambda0 <- 1.7
+mu0 <- 0.54
+phi0 <- 1
+
+lambda1 <- 0.15
+
+lambda2 <- 1.6
+mu2 <- 8
+phi2 <- 20
+
 sim.seeds <- readRDS("sim_seeds_nsim1000.rds")
 
 .Random.seed <- sim.seeds[[iter]]
