@@ -34,9 +34,9 @@ sim.loglik012.m <- function(theta, max.M, tau, profile.param, N=10^5) {
   )
   dat$du <- dat$u2 - dat$u1
   
-  log.l2.values   <- round(log(theta$lambda2), 2) - 0.1 + seq(from=0.01, by=0.01, length.out=20)
-  log.phi2.values <- round(log(theta$phi2), 1)    - 2   + seq(from=0.2,  by=0.2,  length.out=20)
-  log.mu2.values  <- round(log(theta$mu2), 1)     - 2   + seq(from=0.2,  by=0.2,  length.out=20)
+  log.l2.values   <- round(log(theta$lambda2), 2) - 2 + seq(from=0.2,  by=0.2, length.out=20)
+  log.phi2.values <- round(log(theta$phi2), 1)    - 2 + seq(from=0.2,  by=0.2,  length.out=20)
+  log.mu2.values  <- round(log(theta$mu2), 1)     - 2 + seq(from=0.2,  by=0.2,  length.out=20)
   
   if (profile.param == "lambda2") {
     param.grid <- expand.grid(log.phi2=log.phi2.values,  log.mu2=log.mu2.values)
