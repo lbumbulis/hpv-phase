@@ -2,34 +2,60 @@
 library(dplyr)
 library(tidyr)
 
-dtpois.all <- function(mu, max.M) {
-  # Note: M-1 is Poisson distributed (not M) so the mean of M is mu+1
-  probs <- dpois(0:(max.M-1), lambda=mu)
-  return(probs / sum(probs))
+logit <- function(x) { log(x / (1-x)) }
+expit <- function(x) { exp(x) / (1+exp(x)) }
+
+expify <- function(x) {
+  p.idx <- grep("^p[0-9]$", names(x))
+  if (length(p.idx) > 0) {
+    x[p.idx] <- expit(x[p.idx])
+    x[-p.idx] <- exp(x[-p.idx])
+  } else {
+    x <- exp(x)
+  }
+  return(x)
 }
 
-rtpois <- function(n, mu, max.M) {
-  sample(1:max.M, size=n, replace=T, prob=dtpois.all(mu, max.M))
+M.pmf.fn <- function(param, max.M, M.dist="binom") {
+  M.vals <- 1:max.M
+  
+  if (M.dist=="tpois") {
+    probs <- dpois(M.vals-1, lambda=mu)
+    probs <- probs / sum(probs)
+  } else if (M.dist=="binom") {
+    probs <- dbinom(M.vals-1, size=max.M-1, prob=param)
+  }
+  return(probs)
 }
 
-set.lambda <- function(theta, tau, prop0, p2) {
-  # Solve for l2 in this equation for the proportion of time spent in state 0 vs. 1:
-  # 1/l1 / (1/l1 + mu/l2) = prop0
-  l2.fn <- function(l1) { l1*theta$mu2*prop0 / (1-prop0) }
+rM <- function(n, p, max.M) {
+  sample(1:max.M, size=n, replace=T, prob=M.pmf.fn(p, max.M))
+}
+
+# Set lambda1 and lambda2 for the progressive (0->1->2) process
+set.lambda <- function(theta, tau, prop0, pfail) {
+  max.M2 <- theta$max.M2
+  M.pmf <- M.pmf.fn(theta$p2, max.M2)
+  
+  # Solve for l2 in this equation for the proportion of time spent in state 0 vs. 1 ...
+  # 1/l1 / (1/l1 + M/l2) = prop0
+  # ... and marginalize over M
+  l2.fn <- function(l1) {
+    l1*prop0 / (1-prop0) * as.numeric(1:max.M2 %*% M.pmf)
+  }
   
   uniroot.fn <- function(log.l1) {
     l1 <- exp(log.l1)
     l2 <- l2.fn(l1)
     
-    p2.M.fn <- Vectorize(function(M) {
+    pfail.M.fn <- Vectorize(function(M) {
       int.outer <- function(s0) {
         pgamma(tau-s0, shape=M, rate=l2) * dexp(s0, rate=l1)
       }
       integrate(int.outer, lower=0, upper=tau)$value
     })
-    # Set the prob. of failure by tau to p2
-    M.pmf <- dtpois.all(theta$mu2, theta$max.M2)
-    as.numeric(p2.M.fn(1:max.M) %*% M.pmf) - p2
+    # Set the prob. of failure by tau to pfail
+    as.numeric(pfail.M.fn(1:max.M2) %*% M.pmf) - pfail
   }
   
   res <- uniroot(uniroot.fn, c(-6,2))
@@ -63,17 +89,13 @@ s01.fn <- function(N, l1) { rexp(N, rate=l1) }
 
 # Generate sojourn time in state 1 before -> 0
 s10.fn <- function(N, theta, M=NULL) {
-  if (is.null(M)) {
-    M <- rtpois(N, theta$mu0, theta$max.M0) + 1
-  }
+  if (is.null(M)) { M <- rM(N, theta$p0, theta$max.M0) }
   rgamma(N, shape=M, rate=theta$lambda0)
 }
 
 # Generate sojourn time in state 1 before -> 2
 s12.fn <- function(N, theta, M=NULL) {
-  if (is.null(M)) {
-    M <- rtpois(N, theta$mu2, theta$max.M2) + 1
-  }
+  if (is.null(M)) { M <- rM(N, theta$p2, theta$max.M2) }
   rgamma(N, shape=M, rate=theta$lambda2)
 }
 
