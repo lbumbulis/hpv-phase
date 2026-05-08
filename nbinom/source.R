@@ -2,17 +2,9 @@
 library(dplyr)
 library(tidyr)
 
-dtpois.all <- function(mu, max.M) {
-  # Note: M-1 is Poisson distributed (not M) so the mean of M is mu+1
-  probs <- dpois(0:(max.M-1), lambda=mu)
-  return(probs / sum(probs))
-}
-
-rtpois <- function(n, mu, max.M) {
-  sample(1:max.M, size=n, replace=T, prob=dtpois.all(mu, max.M))
-}
-
-set.lambda <- function(theta, tau, prop0, p2) {
+set.lambda <- function(theta, max.M, tau, prop0, p2) {
+  M.probs <- dnbinom((1:max.M)-1, size=theta$phi2, mu=theta$mu2)
+  
   # Solve for l2 in this equation for the proportion of time spent in state 0 vs. 1:
   # 1/l1 / (1/l1 + mu/l2) = prop0
   l2.fn <- function(l1) { l1*theta$mu2*prop0 / (1-prop0) }
@@ -27,9 +19,7 @@ set.lambda <- function(theta, tau, prop0, p2) {
       }
       integrate(int.outer, lower=0, upper=tau)$value
     })
-    # Set the prob. of failure by tau to p2
-    M.pmf <- dtpois.all(theta$mu2, theta$max.M2)
-    as.numeric(p2.M.fn(1:max.M) %*% M.pmf) - p2
+    as.numeric(p2.M.fn(1:max.M) %*% M.probs) - p2 # set the prob. of failure by tau
   }
   
   res <- uniroot(uniroot.fn, c(-6,2))
@@ -64,7 +54,7 @@ s01.fn <- function(N, l1) { rexp(N, rate=l1) }
 # Generate sojourn time in state 1 before -> 0
 s10.fn <- function(N, theta, M=NULL) {
   if (is.null(M)) {
-    M <- rtpois(N, theta$mu0, theta$max.M0) + 1
+    M <- rnbinom(N, size=theta$phi0, mu=theta$mu0) + 1
   }
   rgamma(N, shape=M, rate=theta$lambda0)
 }
@@ -72,7 +62,7 @@ s10.fn <- function(N, theta, M=NULL) {
 # Generate sojourn time in state 1 before -> 2
 s12.fn <- function(N, theta, M=NULL) {
   if (is.null(M)) {
-    M <- rtpois(N, theta$mu2, theta$max.M2) + 1
+    M <- rnbinom(N, size=theta$phi2, mu=theta$mu2) + 1
   }
   rgamma(N, shape=M, rate=theta$lambda2)
 }
