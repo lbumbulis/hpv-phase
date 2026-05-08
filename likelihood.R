@@ -19,7 +19,8 @@ loglik012.m.fn <- function(dat, theta) {
   # Calculate the lambda2 terms conditional on each possible M
   loglik.c <- l1.terms + sapply(1:max.M2, function(M) { loglik012.c.l2.term(dat, l2, M) })
   # Marginalize over M
-  log.M2.pmf <- log(M.pmf.fn(theta$p2, max.M2))
+  log.M2.pmf <- log(M.pmf.fn(theta$mu2, max.M2))
+  # log.M2.pmf <- log(M.pmf.fn(theta$p2, max.M2))
   sum(matrixStats::rowLogSumExps(sweep(loglik.c, 2, log.M2.pmf, "+")))
 }
 
@@ -35,19 +36,26 @@ sim.loglik012.m <- function(theta.true, tau, N=10^5) {
   )
   dat$du <- dat$u2 - dat$u1
   
-  log.l2.values <- round(log(theta.true$lambda2), 2) - 0.2 + seq(from=0.02, by=0.02, length.out=20)
-  logit.p2.values <- round(logit(theta.true$p2), 2)  - 0.5 + seq(from=0.05, by=0.05, length.out=20)
-  param.grid <- expand.grid(log.lambda2=log.l2.values, logit.p2=logit.p2.values)
+  log.l2.values   <- round(log(theta.true$lambda2), 2) - 0.2 + seq(from=0.02, by=0.02, length.out=20)
+  log.mu2.values  <- round(log(theta.true$mu2), 2)     - 0.2 + seq(from=0.02, by=0.02, length.out=20)
+  # logit.p2.values <- round(logit(theta.true$p2), 2)  - 0.5 + seq(from=0.05, by=0.05, length.out=20)
+  param.grid <- expand.grid(
+    log.lambda2 = log.l2.values,
+    log.mu2     = log.mu2.values #,
+    # logit.p2    = logit.p2.values
+  )
   
   log.l1.start <- c(lambda1=0)
   
   # Function to profile out lambda1 and profile.param
   profile.fn <- function(param.list) {
     # Pre-compute the l1-independent terms before optim
-    l2 <- param.list$lambda2
-    p2 <- param.list$p2
+    l2  <- param.list$lambda2
+    mu2 <- param.list$mu2
+    # p2 <- param.list$p2
     max.M2 <- param.list$max.M2
-    log.M2.pmf <- log(M.pmf.fn(p2, max.M2))
+    log.M2.pmf <- log(M.pmf.fn(mu2, max.M2))
+    # log.M2.pmf <- log(M.pmf.fn(p2, max.M2))
     
     l2.terms <- sapply(1:max.M2, function(M) { loglik012.c.l2.term(dat, l2, M) })  # N x max.M2 matrix
     

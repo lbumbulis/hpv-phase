@@ -16,11 +16,11 @@ expify <- function(x) {
   return(x)
 }
 
-M.pmf.fn <- function(param, max.M, M.dist="binom") {
+M.pmf.fn <- function(param, max.M, M.dist="tpois") {
   M.vals <- 1:max.M
   
   if (M.dist=="tpois") {
-    probs <- dpois(M.vals-1, lambda=mu)
+    probs <- dpois(M.vals-1, lambda=param)
     probs <- probs / sum(probs)
   } else if (M.dist=="binom") {
     probs <- dbinom(M.vals-1, size=max.M-1, prob=param)
@@ -35,7 +35,8 @@ rM <- function(n, p, max.M) {
 # Set lambda1 and lambda2 for the progressive (0->1->2) process
 set.lambda <- function(theta, tau, prop0, pfail) {
   max.M2 <- theta$max.M2
-  M.pmf <- M.pmf.fn(theta$p2, max.M2)
+  M.pmf <- M.pmf.fn(theta$mu2, max.M2)
+  # M.pmf <- M.pmf.fn(theta$p2, max.M2)
   
   # Solve for l2 in this equation for the proportion of time spent in state 0 vs. 1 ...
   # 1/l1 / (1/l1 + M/l2) = prop0
@@ -95,7 +96,8 @@ s10.fn <- function(N, theta, M=NULL) {
 
 # Generate sojourn time in state 1 before -> 2
 s12.fn <- function(N, theta, M=NULL) {
-  if (is.null(M)) { M <- rM(N, theta$p2, theta$max.M2) }
+  if (is.null(M)) { M <- rM(N, theta$mu2, theta$max.M2) }
+  # if (is.null(M)) { M <- rM(N, theta$p2, theta$max.M2) }
   rgamma(N, shape=M, rate=theta$lambda2)
 }
 

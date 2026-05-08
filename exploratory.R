@@ -90,7 +90,7 @@ plot.sojourn.M <- function(lambda.vals, param.vals, max.M, max.x, target, M.dist
 }
 
 ### Try to emulate 1->0 density
-lambda.vals <- c(2, 3, 4, 5)
+lambda.vals <- c(1.6, 2, 2.5, 3)
 mu.vals <- c(0.1, 0.5, 1)
 plot.sojourn.M(lambda.vals, mu.vals, max.M=3, max.x=5, "d10", M.dist="tpois")
 # plot.sojourn.M(lambda.vals, mu.vals, max.M=4, max.x=5, "d10", M.dist="tpois")
@@ -107,9 +107,9 @@ plot.sojourn.M(lambda.vals, p.vals, max.M=3, max.x=5, "d10", M.dist="binom")
 
 ### Try to emulate 1->2 density
 lambda.vals <- c(0.5, 1, 1.5)
-mu.vals <- c(4, 5, 6)
+mu.vals <- c(5, 6, 6.5)
 plot.sojourn.M(lambda.vals, mu.vals, max.M=7, max.x=12, "d12", M.dist="tpois")
-# plot.sojourn.M(lambda.vals, mu.vals, max.M=8, max.x=12, "d12", M.dist="tpois")
+plot.sojourn.M(lambda.vals, mu.vals, max.M=8, max.x=12, "d12", M.dist="tpois")
 # plot.sojourn.M(lambda.vals, mu.vals, max.M=10, max.x=12, "d12", M.dist="tpois")
 # save as params12.png (Width=600, Height=500)
 
@@ -143,6 +143,7 @@ VarS.fn <- function(lambda, param, max.M, M.dist) {
 ### Try to emulate 1->0 density
 # Mean sojourn time
 ES.fn(lambda=2,   param=0.1,  max.M=3, M.dist="tpois") # 1.206
+ES.fn(lambda=1.6, param=0.5,  max.M=3, M.dist="tpois") # 0.913 *
 ES.fn(lambda=1.5, param=0.1,  max.M=3, M.dist="binom") # 0.800
 ES.fn(lambda=1.5, param=0.15, max.M=3, M.dist="binom") # 0.867
 ES.fn(lambda=1.5, param=0.17, max.M=3, M.dist="binom") # 0.893 **
@@ -151,6 +152,7 @@ ES.fn(lambda=1.5, param=0.2,  max.M=3, M.dist="binom") # 0.933
 
 # Variance of sojourn time
 VarS.fn(lambda=2,   param=0.1,  max.M=3, M.dist="tpois") # 0.722
+VarS.fn(lambda=1.6, param=0.5,  max.M=3, M.dist="tpois") # 0.728 *
 VarS.fn(lambda=1.5, param=0.1,  max.M=3, M.dist="binom") # 0.613
 VarS.fn(lambda=1.5, param=0.15, max.M=3, M.dist="binom") # 0.691
 VarS.fn(lambda=1.5, param=0.17, max.M=3, M.dist="binom") # 0.721 **
@@ -160,12 +162,14 @@ VarS.fn(lambda=1.5, param=0.2,  max.M=3, M.dist="binom") # 0.764
 
 ### Try to emulate 1->2 density
 # Mean sojourn time
-ES.fn(lambda=1, param=6,   max.M=7, M.dist="tpois") # 3.844
+ES.fn(lambda=1, param=6,   max.M=7, M.dist="tpois") # 5.410
+ES.fn(lambda=1, param=6.5, max.M=7, M.dist="tpois") # 5.556 *
 ES.fn(lambda=1, param=0.8, max.M=7, M.dist="binom") # 5.800 **
 1/rho2 * gamma(1 + 1/kappa2)                        # 5.542
 
 # Variance of sojourn time
-VarS.fn(lambda=1, param=6,   max.M=7, M.dist="tpois")    # 6.193
+VarS.fn(lambda=1, param=6,   max.M=7, M.dist="tpois")    # 7.294
+VarS.fn(lambda=1, param=6.5, max.M=7, M.dist="tpois")    # 7.304 *
 VarS.fn(lambda=1, param=0.8, max.M=7, M.dist="binom")    # 6.760 **
 1/(rho2^2) * ( gamma(1+2/kappa2) - gamma(1+1/kappa2)^2 ) # 5.917
 
