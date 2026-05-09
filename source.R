@@ -17,19 +17,19 @@ expify <- function(x) {
 }
 
 M.pmf.fn <- function(param, max.M, M.dist="tpois") {
-  M.vals <- 1:max.M
+  M.vals <- 0:max.M
   
   if (M.dist=="tpois") {
-    probs <- dpois(M.vals-1, lambda=param)
+    probs <- dpois(M.vals, lambda=param)
     probs <- probs / sum(probs)
   } else if (M.dist=="binom") {
-    probs <- dbinom(M.vals-1, size=max.M-1, prob=param)
+    probs <- dbinom(M.vals, size=max.M, prob=param)
   }
   return(probs)
 }
 
 rM <- function(n, p, max.M) {
-  sample(1:max.M, size=n, replace=T, prob=M.pmf.fn(p, max.M))
+  sample(0:max.M, size=n, replace=T, prob=M.pmf.fn(p, max.M))
 }
 
 # Set lambda1 and lambda2 for the progressive (0->1->2) process
@@ -42,7 +42,7 @@ set.lambda <- function(theta, tau, prop0, pfail) {
   # 1/l1 / (1/l1 + M/l2) = prop0
   # ... and marginalize over M
   l2.fn <- function(l1) {
-    l1*prop0 / (1-prop0) * as.numeric(1:max.M2 %*% M.pmf)
+    l1*prop0 / (1-prop0) * as.numeric(0:max.M2 %*% M.pmf)
   }
   
   uniroot.fn <- function(log.l1) {
@@ -56,7 +56,7 @@ set.lambda <- function(theta, tau, prop0, pfail) {
       integrate(int.outer, lower=0, upper=tau)$value
     })
     # Set the prob. of failure by tau to pfail
-    as.numeric(pfail.M.fn(1:max.M2) %*% M.pmf) - pfail
+    as.numeric(pfail.M.fn(0:max.M2) %*% M.pmf) - pfail
   }
   
   res <- uniroot(uniroot.fn, c(-6,2))

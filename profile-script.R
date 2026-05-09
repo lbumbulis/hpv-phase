@@ -3,10 +3,10 @@ args   <- commandArgs(trailingOnly=TRUE)
 pfail  <- as.numeric(args[1]) # 0.5, 0.7, 0.9
 mu2    <- as.numeric(args[2]) # 0.5, 6.5
 # p2     <- as.numeric(args[2]) # 0.17, 0.8
-max.M2 <- as.numeric(args[3]) # 3, 7
+max.M2 <- as.numeric(args[3]) # 2, 6
 
 source("source.R")
-source("likelihood.R")
+source("profile-source.R")
 
 tau <- 4
 
