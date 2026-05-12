@@ -51,7 +51,7 @@ all_draws <- bind_rows(all_draws_list, .id="iter") %>%
 
 all_summary <- as.data.frame(
   all_draws %>%
-    pivot_longer(cols=starts_with("log_"), names_to="param", values_to="value") %>% # TODO
+    pivot_longer(cols=starts_with("log_"), names_to="param", values_to="value") %>%
     group_by(iter, param) %>%
     summarise(
       est=mean(value), q025=quantile(value, 0.025), q975=quantile(value, 0.975),
@@ -77,33 +77,35 @@ coverage <- function(df, truth) {
 }
 
 plot_est <- function(est_se, truth) {
-  nparam <- nrow(truth)
-  
-  if (nparam==3) {
+  tryCatch({
     old.par <- par(mar=c(2,4,2,1))
-    layout(matrix(c(1:3, rep(4,3)), nrow=2, byrow=T), heights=c(1, 0.1))
-  } else if (nparam==4) {
-    old.par <- par(mar=c(2,4,2,1))
-    layout(matrix(c(1:4, rep(5,2)), nrow=3, byrow=T), heights=c(1, 1, 0.1))
-  } else if (nparam==7) {
-    old.par <- par(mar=c(2,4,2,1))
-    layout(matrix(c(1:7, rep(8,7)), nrow=2, byrow=T), heights=c(1, 0.1))
-  }
-  
-  for (jj in 1:nparam) {
-    p <- truth$param[jj]
-    temp <- est_se[which(est_se$param==p),]
     
-    hist(temp$est, main=truth$param[jj], xlab="")
-    abline(v=mean(temp$est), lwd=2, lty=2)
-    abline(v=truth$val[jj], col="red", lwd=2, lty=2)
-  }
-  par(mar=c(0,0,0,0)+0.1)
-  plot.new()
-  legend("center", legend=c("estimate", "truth"), col=c("black","red"),
-         lty=2, lwd=2, bty="n", horiz=T)
-  
-  par(old.par)
+    nparam <- nrow(truth)
+    if (nparam==3) {
+      layout(matrix(c(1:3, rep(4,3)), nrow=2, byrow=T), heights=c(1, 0.1))
+    } else if (nparam==4) {
+      layout(matrix(c(1:4, rep(5,2)), nrow=3, byrow=T), heights=c(1, 1, 0.1))
+    } else if (nparam==5) {
+      layout(matrix(c(1:5, rep(6,5)), nrow=2, byrow=T), heights=c(1, 0.1))
+    } else if (nparam==7) {
+      layout(matrix(c(1:7, rep(8,7)), nrow=2, byrow=T), heights=c(1, 0.1))
+    }
+    
+    for (jj in 1:nparam) {
+      p <- truth$param[jj]
+      temp <- est_se[which(est_se$param==p),]
+      
+      hist(temp$est, main=truth$param[jj], xlab="")
+      abline(v=mean(temp$est), lwd=2, lty=2)
+      abline(v=truth$val[jj], col="red", lwd=2, lty=2)
+    }
+    par(mar=c(0,0,0,0)+0.1)
+    plot.new()
+    legend("center", legend=c("estimate", "truth"), col=c("black","red"),
+           lty=2, lwd=2, bty="n", horiz=T)
+  }, finally = {
+    par(old.par)
+  })
 }
 
 model_type <- ""

@@ -2,6 +2,7 @@
 library(ggplot2)
 library(dplyr)
 library(tidyr)
+library(RColorBrewer)
 
 source("source.R")
 
@@ -18,14 +19,52 @@ kappa0 <- 0.74
 rho2 <- 1/6.25
 kappa2 <- 2.43
 
-###### Sojourn time distributions as a function of lambda and mu or p #########
+###############################################################################
+# Truncated Poisson distributions as a function of mu, lambda, and max.M
+###############################################################################
+plot.tpois <- function() {
+  mu.vals    <- 0:8
+  mu.vals[1] <- 0.1
+  max.M.vals <- 2:7
+  
+  param.grid <- expand.grid(mu=mu.vals, max.M=max.M.vals)
+  df <- as.data.frame(data.table::rbindlist(lapply(1:nrow(param.grid), function(r) {
+    mu    <- param.grid$mu[r]
+    max.M <- param.grid$max.M[r]
+    data.frame(mu=mu, max.M=max.M, M=0:max.M, prob=M.pmf.fn(mu, max.M))
+  })))
+  
+  df <- df |> mutate(
+    mu_label = factor(paste0("mu==", mu), levels=paste0("mu==", mu.vals)),
+    max_M_label = factor(paste0("M^'*'==", max.M), levels=paste0("M^'*'==", max.M.vals))
+  )
+  
+  ggplot(df, aes(x=M, y=prob)) +
+    geom_col(colour="black", fill="steelblue", alpha=0.3) +
+    facet_grid(max_M_label ~ mu_label, labeller=label_parsed) +
+    labs(y="PMF") +
+    theme.component
+}
 
+plot.tpois()
+
+###############################################################################
+# Sojourn time distributions as a function of lambda and mu or p
+###############################################################################
 # Plot sojourn distribution marginal over M
-plot.sojourn.M <- function(lambda.vals, param.vals, max.M, max.x, target, M.dist, out.col="density") {
-  test.params <- expand.grid(x=seq(0.01, max.x, by=0.01), lambda=lambda.vals, param=param.vals)
+plot.sojourn.M <- function(lambda.vals, param.vals, max.x, target,
+                           M.dist, max.M=NULL, out.col="density") {
+  x.vals <- seq(0.01, max.x, by=0.01)
+  max.M.vals <- c(2,3,5,7,9)
+  if (is.null(max.M)) {
+    test.params <- expand.grid(x=x.vals, lambda=lambda.vals, param=param.vals, max.M=max.M.vals)
+  } else {
+    test.params <- expand.grid(x=x.vals, lambda=lambda.vals, param=param.vals)
+  }
   
   df <- test.params
   df <- cbind(df, t(sapply(1:nrow(df), function(r) {
+    if (is.null(max.M)) { max.M <- df$max.M[r] }
     M.pmf <- M.pmf.fn(df$param[r], max.M, M.dist)
     
     x <- df$x[r]
@@ -34,7 +73,7 @@ plot.sojourn.M <- function(lambda.vals, param.vals, max.M, max.x, target, M.dist
     
     t(M.pmf) %*% cbind(dens, surv, dens/surv)
   })))
-  names(df)[4:6] <- c("density", "survival", "hazard")
+  names(df)[ncol(df)-(2:0)] <- c("density", "survival", "hazard")
   df <- df |>
     mutate(
       d10 = dweibull(x, shape=kappa0, scale=1/rho0),
@@ -63,63 +102,91 @@ plot.sojourn.M <- function(lambda.vals, param.vals, max.M, max.x, target, M.dist
   
   if (M.dist=="tpois") {
     df <- df |> mutate(param_label = factor(paste0("mu==", param), levels=paste0("mu==", param.vals)))
-    lab.component <- labs(
-      title = bquote(bold("Erlang" ~ .(out.col) * ": rate" ~ lambda *
-                          ", shape = 1 + M ~ tPois(" * mu * "," ~ tau==.(max.M) * ")")),
-      x = "x",
-      y = paste0(y.fn, "(x)")
-    )
+    if (is.null(max.M)) {
+      lab.component <- labs(
+        title = bquote(bold("Erlang mixture" ~ .(out.col) * ": rate" ~ lambda *
+                              ", shape = 1 + M;  M ~ tPois(" * mu * "," ~ M^"*" * ")")),
+        x = "x",
+        y = paste0(y.fn, "(x)")
+      )
+    } else {
+      lab.component <- labs(
+        title = bquote(bold("Erlang mixture" ~ .(out.col) * ": rate" ~ lambda *
+                              ", shape = 1 + M;  M ~ tPois(" * mu * "," ~ M^"*"==.(max.M) * ")")),
+        x = "x",
+        y = paste0(y.fn, "(x)")
+      )
+    }
   } else if (M.dist=="binom") {
     df <- df |> mutate(param_label = factor(paste0("p==", param), levels=paste0("p==", param.vals)))
     lab.component <- labs(
       title = bquote(bold("Erlang" ~ .(out.col) * ": rate" ~ lambda *
-                          ", shape = 1 + M ~ Bin(" * n==.(max.M) * "," ~ p * ")")),
+                          ", shape = 1 + M;  M ~ Bin(" * n==.(max.M) * "," ~ p * ")")),
       x = "x",
       y = paste0(y.fn, "(x)")
     )
   }
   
-  ggplot(df, aes(x=x, y=y, colour=factor(lambda), fill=factor(lambda))) +
-    target_component +
+  if (is.null(max.M)) {
+    g <- ggplot(df, aes(x=x, y=y, colour=factor(max.M)))
+    n <- length(max.M.vals)
+    scale.component <- scale_colour_manual(
+      name   = expression(M^"*"),
+      values = rev(brewer.pal(n+3, "Blues")[(1:n)+3])
+    )
+  } else {
+    g <- ggplot(df, aes(x=x, y=y, colour=factor(lambda), fill=factor(lambda)))
+    scale.component <-
+      scale_colour_brewer(palette="Dark2", guide="none") +
+      scale_fill_brewer(palette="Dark2", guide="none")
+  }
+  
+  g + target_component +
     geom_line(linewidth=0.8) +
     facet_grid(param_label ~ lambda_label, labeller=label_parsed) +
-    scale_colour_brewer(palette="Dark2", guide="none") +
-    scale_fill_brewer(palette="Dark2", guide="none") +
+    scale.component +
     lab.component +
-    theme.component
+    theme.component +
+    theme(plot.title = element_text(size=12))
 }
 
 ### Try to emulate 1->0 density
 lambda.vals <- c(1.6, 2, 2.5, 3)
 mu.vals <- c(0.1, 0.5, 1)
-plot.sojourn.M(lambda.vals, mu.vals, max.M=2, max.x=5, "d10", M.dist="tpois")
-# plot.sojourn.M(lambda.vals, mu.vals, max.M=3, max.x=5, "d10", M.dist="tpois")
-# plot.sojourn.M(lambda.vals, mu.vals, max.M=4, max.x=5, "d10", M.dist="tpois")
+plot.sojourn.M(lambda.vals, mu.vals, max.M=2, max.x=5, target="d10", M.dist="tpois")
+# plot.sojourn.M(lambda.vals, mu.vals, max.M=3, max.x=5, target="d10", M.dist="tpois")
+# plot.sojourn.M(lambda.vals, mu.vals, max.M=4, max.x=5, target="d10", M.dist="tpois")
 # save as params10_tpois.png (Width=550, Height=450)
 
 lambda.vals <- c(1.25, 1.5, 2)
 p.vals <- c(0.1, 0.15, 0.2)
-# plot.sojourn.M(lambda.vals, p.vals, max.M=1, max.x=5, "d10", M.dist="binom")
-plot.sojourn.M(lambda.vals, p.vals, max.M=2, max.x=5, "d10", M.dist="binom")
-# plot.sojourn.M(lambda.vals, p.vals, max.M=3, max.x=5, "d10", M.dist="binom")
-# plot.sojourn.M(lambda.vals, p.vals, max.M=4, max.x=5, "d10", M.dist="binom")
+# plot.sojourn.M(lambda.vals, p.vals, max.M=1, max.x=5, target="d10", M.dist="binom")
+plot.sojourn.M(lambda.vals, p.vals, max.M=2, max.x=5, target="d10", M.dist="binom")
+# plot.sojourn.M(lambda.vals, p.vals, max.M=3, max.x=5, target="d10", M.dist="binom")
+# plot.sojourn.M(lambda.vals, p.vals, max.M=4, max.x=5, target="d10", M.dist="binom")
 
 
 ### Try to emulate 1->2 density
 lambda.vals <- c(0.5, 1, 1.5)
 mu.vals <- c(5, 6, 6.5)
-plot.sojourn.M(lambda.vals, mu.vals, max.M=6, max.x=12, "d12", M.dist="tpois")
-# plot.sojourn.M(lambda.vals, mu.vals, max.M=7, max.x=12, "d12", M.dist="tpois")
-# plot.sojourn.M(lambda.vals, mu.vals, max.M=9, max.x=12, "d12", M.dist="tpois")
+plot.sojourn.M(lambda.vals, mu.vals, max.M=6, max.x=12, target="d12", M.dist="tpois")
+# plot.sojourn.M(lambda.vals, mu.vals, max.M=7, max.x=12, target="d12", M.dist="tpois")
+# plot.sojourn.M(lambda.vals, mu.vals, max.M=9, max.x=12, target="d12", M.dist="tpois")
 # save as params12_tpois.png (Width=600, Height=500)
 
 lambda.vals <- c(0.8, 1, 1.5)
 p.vals <- c(0.7, 0.75, 0.8, 0.9)
-plot.sojourn.M(lambda.vals, p.vals, max.M=6, max.x=12, "d12", M.dist="binom")
-plot.sojourn.M(lambda.vals, p.vals, max.M=7, max.x=12, "d12", M.dist="binom")
+plot.sojourn.M(lambda.vals, p.vals, max.M=6, max.x=12, target="d12", M.dist="binom")
+plot.sojourn.M(lambda.vals, p.vals, max.M=7, max.x=12, target="d12", M.dist="binom")
+
+### Explore variety of shapes
+plot.sojourn.M(lambda.vals, mu.vals, max.x=8, target="none", M.dist="tpois")
+# save as erlang_tpois.png (Width=670, Height=550)
 
 
-###### Expected sojourn time as a function of mu or p #########################
+###############################################################################
+# Expected sojourn time as a function of mu or p
+###############################################################################
 ES.fn <- function(lambda, param, max.M, M.dist, squared=F) {
   M.pmf <- M.pmf.fn(param, max.M, M.dist)
   
