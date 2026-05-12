@@ -19,11 +19,6 @@ stan_params012 <- data.frame(
 
 mu2 <- 5
 
-stan_params <- data.frame(
-  param = paste0("log_", c("lambda1", "mean_s10", "mean_s12", "mu0", "phi0", "mu2", "phi2")),
-  value = log(c(lambda1, mu0/lambda0, mu2/lambda2, mu0, phi0, mu2, phi2))
-)
-
 ##### Inspect results from a single model fit #################################
 model_fit <- readRDS("./results/model_iter31.rds")
 
@@ -31,7 +26,9 @@ mcmc_trace(model_fit$draws(inc_warmup=T), pars=stan_params$param, n_warmup=1000)
 model_fit$summary()
 
 # Check which parameters are associated with divergences
-mcmc_pairs(model_fit$draws(), np=nuts_params(model_fit), pars=stan_params$param)
+mcmc_pairs(model_fit$draws(),
+           # np=nuts_params(model_fit),
+           pars=stan_params$param)
 
 mcmc_hist(model_fit$draws(stan_params$param))
 

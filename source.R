@@ -28,8 +28,8 @@ M.pmf.fn <- function(param, max.M, M.dist="tpois") {
   return(probs)
 }
 
-rM <- function(n, p, max.M) {
-  sample(0:max.M, size=n, replace=T, prob=M.pmf.fn(p, max.M))
+rM <- function(n, mu, max.M) {
+  sample(0:max.M, size=n, replace=T, prob=M.pmf.fn(mu, max.M))
 }
 
 # Set lambda1 and lambda2 for the progressive (0->1->2) process
@@ -90,15 +90,14 @@ s01.fn <- function(N, l1) { rexp(N, rate=l1) }
 
 # Generate sojourn time in state 1 before -> 0
 s10.fn <- function(N, theta, M=NULL) {
-  if (is.null(M)) { M <- rM(N, theta$p0, theta$max.M0) }
-  rgamma(N, shape=M, rate=theta$lambda0)
+  if (is.null(M)) { M <- rM(N, theta$mu0, theta$max.M0) }
+  rgamma(N, shape=M+1, rate=theta$lambda0)
 }
 
 # Generate sojourn time in state 1 before -> 2
 s12.fn <- function(N, theta, M=NULL) {
   if (is.null(M)) { M <- rM(N, theta$mu2, theta$max.M2) }
-  # if (is.null(M)) { M <- rM(N, theta$p2, theta$max.M2) }
-  rgamma(N, shape=M, rate=theta$lambda2)
+  rgamma(N, shape=M+1, rate=theta$lambda2)
 }
 
 # Convert progressive process data into natural history dataframe
@@ -116,34 +115,38 @@ dfify <- function(s01, s12) {
 # Code in here adapted from Fangya's hpv_precanc.R
 ###########################################################
 # Simulate time to HPV appearance
-appear <- function(strt, strt_z){
+appear <- function(strt, strt_z, l1){
   n <- length(strt)
-  s <- s01.fn(n)
+  s <- s01.fn(n, l1)
   t_trans <- ifelse(strt_z==2, Inf, strt+s)
   z_trans <- ifelse(strt_z==2, 2, 1)
   return(data.frame(id=seq(n), from=strt, to=t_trans, from_z=strt_z, to_z=z_trans))
 }
 # Simulate clearance (resolution) of HPV infection
-resolve <- function(strt, strt_z, M){
+resolve <- function(strt, strt_z, theta, M){
   n <- length(strt)
-  clr <- s10.fn(n, M[[1]])
-  prg <- s12.fn(n, M[[2]])
+  clr <- s10.fn(n, theta, M[[1]])
+  prg <- s12.fn(n, theta, M[[2]])
   t_trans <- ifelse(strt_z==2, Inf, strt + pmin(clr, prg))
   z_trans <- ifelse(strt_z==2, 2, ifelse(clr<prg, 0, 2))
   return(data.frame(id=seq(n), from=strt, to=t_trans, from_z=strt_z, to_z=z_trans))
 }
 
 # Create natural history (NH)
-generate_NH <- function(n, M=list(NULL, NULL)) {
+generate_NH <- function(n, theta, M=list(NULL, NULL)) {
+  l1 <- theta$lambda1
+  
   out <- data.frame()
-  out <- rbind(out, appear(rep(0,n), rep(0,n)))   # 1st appearance
-  out <- rbind(out, resolve(out$to, out$to_z, M)) # 1st infection resolved
+  out <- rbind(out, appear(rep(0,n), rep(0,n), l1))      # 1st appearance
+  out <- rbind(out, resolve(out$to, out$to_z, theta, M)) # 1st infection resolved
   
   # Repeat until individuals are too old to be included in studies
   max_iter <- 24
   for (i in 0:max_iter){
-    out <- rbind(out, appear(out$to[((2*i+1)*n+1):((2*i+2)*n)], out$to_z[((2*i+1)*n+1):((2*i+2)*n)]))
-    out <- rbind(out, resolve(out$to[((2*i+2)*n+1):((2*i+3)*n)], out$to_z[((2*i+2)*n+1):((2*i+3)*n)], M))
+    a.rows  <- ((2*i+1)*n+1):((2*i+2)*n)
+    r.rows <- ((2*i+2)*n+1):((2*i+3)*n)
+    out <- rbind(out, appear(out$to[a.rows],  out$to_z[a.rows],  l1))
+    out <- rbind(out, resolve(out$to[r.rows], out$to_z[r.rows], theta, M))
   }
   # # Check age and state distribution at end of simulated NH
   # sapply(out[(((max_iter+2)*2-1)*n+1):((max_iter+2)*2*n),], summary)
@@ -261,7 +264,7 @@ process.panel <- function(pdat, visit.freq) {
   # Per-subject (0,0) and (0,2) interval counts
   subject_interval_counts <- pdat %>%
     filter(from_z==0, to_z %in% c(0,2)) %>%
-    count(id, to_z) %>%
+    dplyr::count(id, to_z) %>%
     pivot_wider(names_from=to_z, values_from=n, names_prefix="n0", values_fill=0)
   
   # Identify all (0,1,...,1,x) sequences
